@@ -190,6 +190,16 @@ pub(crate) struct SettingRow {
   name: String,
   description: String,
   value: SettingRowValue,
+  /// The row's one button; pressing it sends `PressSettingButton`.
+  button: Option<SettingRowButton>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(all(test, feature = "gui"), derive(ts_rs::TS))]
+pub(crate) struct SettingRowButton {
+  label: String,
+  /// Its work runs, so the button is off.
+  busy: bool,
 }
 
 #[derive(Serialize)]
@@ -239,6 +249,14 @@ const GUI_SETTINGS: &[(&str, &str)] = &[
   ("behavior.streaming_bitrate", "streaming"),
   ("behavior.streaming_audio_cache", "streaming"),
   ("behavior.streaming_autoplay", "streaming"),
+  #[cfg(feature = "soloist")]
+  ("behavior.playback_engine", "streaming"),
+  #[cfg(feature = "soloist")]
+  ("behavior.soloist_path", "streaming"),
+  #[cfg(feature = "soloist")]
+  ("behavior.soloist_api_key", "streaming"),
+  #[cfg(feature = "soloist")]
+  ("behavior.soloist_audio_quality", "streaming"),
   #[cfg(feature = "discord-rpc")]
   ("behavior.enable_discord_rpc", "integrations"),
   ("behavior.enable_global_song_count", "integrations"),
@@ -321,6 +339,29 @@ pub(crate) struct StatusPayload {
   message: Option<String>,
   is_error: bool,
   api_error: Option<String>,
+  /// The Soloist pairing guide to show in a modal.
+  soloist_pairing: Option<SoloistPairingGuide>,
+  /// The offer to set up Soloist to show in a modal.
+  soloist_offer: Option<SoloistOffer>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(all(test, feature = "gui"), derive(ts_rs::TS))]
+pub(crate) struct SoloistOffer {
+  title: &'static str,
+  body: &'static str,
+  steps: [&'static str; 3],
+  set_up: &'static str,
+  not_now: &'static str,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(all(test, feature = "gui"), derive(ts_rs::TS))]
+pub(crate) struct SoloistPairingGuide {
+  title: &'static str,
+  steps: Vec<String>,
+  waiting: &'static str,
+  close: &'static str,
 }
 
 #[derive(Serialize)]
@@ -385,6 +426,9 @@ pub(crate) struct SourcePlaylists {
   youtube: Vec<PlaylistInfo>,
   /// The Music app's playlists, led by an "All songs" row; empty off macOS.
   apple_music: Vec<PlaylistInfo>,
+  /// The `apple_music` rows whose count Music has not given: their
+  /// `track_count` of 0 is a placeholder, so the page shows no count.
+  apple_music_uncounted: Vec<String>,
   /// Stations are playable rows (`radio:<url>`), not playlists.
   radio: Vec<TrackInfo>,
   /// Spotify's saved albums cached so far; `OpenLibrary(Albums)` fetches them.
@@ -393,6 +437,8 @@ pub(crate) struct SourcePlaylists {
   saved_albums_has_more: bool,
   /// Spotify's followed artists cached so far; `OpenLibrary(Artists)` fetches them.
   followed_artists: Vec<ArtistInfo>,
+  /// `LoadMore(SavedArtists)` fetches the next page.
+  followed_artists_has_more: bool,
   /// Spotify's saved podcast shows cached so far; `OpenLibrary(Podcasts)` fetches them.
   saved_shows: Vec<ShowInfo>,
   /// `LoadMore(SavedShows)` fetches the next page.
@@ -840,6 +886,32 @@ fn channel_message(
         api_error: Some(app.api_error())
           .filter(|error| !error.is_empty())
           .map(str::to_string),
+        soloist_pairing: app.soloist_pairing_device().map(|device| {
+          let strings = &app.strings().popups;
+          SoloistPairingGuide {
+            title: strings.soloist_pair_title,
+            steps: vec![
+              strings.soloist_pair_open.to_string(),
+              strings.soloist_pair_pick(device),
+            ],
+            waiting: strings.soloist_pair_waiting,
+            close: strings.soloist_pair_close,
+          }
+        }),
+        soloist_offer: app.soloist_offer_shows().then(|| {
+          let strings = &app.strings().popups;
+          SoloistOffer {
+            title: strings.soloist_offer_title,
+            body: strings.soloist_offer_body,
+            steps: [
+              strings.soloist_offer_step_download,
+              strings.soloist_offer_step_key,
+              strings.soloist_offer_step_engine,
+            ],
+            set_up: strings.soloist_offer_set_up,
+            not_now: strings.soloist_offer_not_now,
+          }
+        }),
       },
     },
     DisplayDomain::Theme => ServerMessage::Theme {
@@ -1080,6 +1152,12 @@ fn settings_for(app: &App, phone: bool) -> Vec<SettingRow> {
           _ => item.description.clone(),
         },
         value,
+        button: app
+          .setting_button_label(id)
+          .map(|(label, busy)| SettingRowButton {
+            label: label.to_string(),
+            busy,
+          }),
       })
     })
     .collect()
@@ -1360,6 +1438,12 @@ fn playlists(app: &App) -> SourcePlaylists {
         ..playlist.clone()
       })
       .collect(),
+    apple_music_uncounted: app
+      .apple_music_playlists()
+      .iter()
+      .filter(|playlist| app.apple_music_count_unknown(&playlist.uri))
+      .map(|playlist| playlist.uri.clone())
+      .collect(),
     radio: app.radio_stations().clone(),
     saved_albums: saved_albums(app),
     saved_albums_has_more: last_page_has_next(&app.library().saved_albums.pages),
@@ -1370,6 +1454,7 @@ fn playlists(app: &App) -> SourcePlaylists {
       .iter()
       .flat_map(|page| page.items.iter().cloned())
       .collect(),
+    followed_artists_has_more: app.current_saved_artists_has_more(),
     saved_shows: saved_shows(app),
     saved_shows_has_more: last_page_has_next(&app.library().saved_shows.pages),
     saved_show_ids: app.saved_show_ids_set().iter().cloned().collect(),
@@ -1632,6 +1717,42 @@ mod tests {
   fn app() -> (App, Receiver<IoEvent>) {
     let (tx, rx) = std::sync::mpsc::channel();
     (App::new(tx, UserConfig::new(), Some(SystemTime::now())), rx)
+  }
+
+  #[cfg(feature = "soloist")]
+  #[test]
+  fn the_status_channel_carries_the_soloist_pairing_guide_until_the_page_closes_it() {
+    let (mut app, _rx) = app();
+    let before = app.display_revisions();
+    app.soloist_notice(crate::infra::soloist::Notice::NotPaired);
+    let status = pushed(&diff(&before, &app, Language::En), "status");
+    let pick = app
+      .strings()
+      .popups
+      .soloist_pair_pick(&app.user_config.behavior.streaming_device_name);
+    assert_eq!(status["payload"]["soloist_pairing"]["steps"][1], pick);
+
+    let closed = apply_from_page(&mut app, &action_frame(Action::DismissSoloistPairing));
+    assert!(pushed(&closed, "status")["payload"]["soloist_pairing"].is_null());
+  }
+
+  #[cfg(feature = "soloist")]
+  #[test]
+  fn the_status_channel_carries_the_soloist_offer_until_the_page_answers_it() {
+    let (mut app, _rx) = app();
+    let before = app.display_revisions();
+    app.offer_soloist_setup();
+    let status = pushed(&diff(&before, &app, Language::En), "status");
+    assert_eq!(
+      status["payload"]["soloist_offer"]["set_up"],
+      app.strings().popups.soloist_offer_set_up
+    );
+
+    let answered = apply_from_page(
+      &mut app,
+      &action_frame(Action::AnswerSoloistOffer { set_up: false }),
+    );
+    assert!(pushed(&answered, "status")["payload"]["soloist_offer"].is_null());
   }
 
   fn apply_from_page(app: &mut App, text: &str) -> Vec<ServerMessage> {
@@ -2065,6 +2186,7 @@ mod tests {
       guests: vec!["Sam".to_string()],
       control_mode: ControlMode::HostOnly,
       host_name: "Host".to_string(),
+      host_state_at: None,
     }));
 
     let party = &pushed(&diff(&before, &app, Language::En), "party")["payload"];
@@ -2170,6 +2292,26 @@ mod tests {
 
     let library = &pushed(&diff(&before, &app, Language::En), "library")["payload"];
     assert_eq!(library["followed_artists"][0]["name"], "Avicii");
+    assert_eq!(library["followed_artists_has_more"], false);
+  }
+
+  #[test]
+  fn the_library_payload_says_when_more_followed_artists_remain() {
+    let (mut app, _rx) = app();
+    let before = app.display_revisions();
+
+    app
+      .library_mut()
+      .saved_artists
+      .add_pages(crate::core::pagination::CursorPaged {
+        items: vec![ArtistInfo::default()],
+        next: Some("next".to_string()),
+        cursor_after: Some("a2".to_string()),
+        ..Default::default()
+      });
+
+    let library = &pushed(&diff(&before, &app, Language::En), "library")["payload"];
+    assert_eq!(library["followed_artists_has_more"], true);
   }
 
   #[test]
@@ -2587,18 +2729,21 @@ mod tests {
   #[test]
   fn apple_library_labels_refresh_by_uri_and_leave_user_playlists_literal() {
     let (mut app, _rx) = app();
-    app.append_apple_music_playlists(vec![
-      PlaylistInfo {
-        uri: "applemusic:library".into(),
-        name: "All songs".into(),
-        ..crate::core::test_helpers::playlist_info("p", "All songs", "", false)
-      },
-      PlaylistInfo {
-        uri: "applemusic:playlist:mine".into(),
-        name: "All songs".into(),
-        ..crate::core::test_helpers::playlist_info("p", "All songs", "", false)
-      },
-    ]);
+    app.append_apple_music_playlists(
+      vec![
+        PlaylistInfo {
+          uri: "applemusic:library".into(),
+          name: "All songs".into(),
+          ..crate::core::test_helpers::playlist_info("p", "All songs", "", false)
+        },
+        PlaylistInfo {
+          uri: "applemusic:playlist:mine".into(),
+          name: "All songs".into(),
+          ..crate::core::test_helpers::playlist_info("p", "All songs", "", false)
+        },
+      ],
+      Vec::new(),
+    );
     for language in [Language::En, Language::ZhHans, Language::ZhHant] {
       app.user_config.behavior.language = language;
       app.refresh_language();
@@ -2608,6 +2753,26 @@ mod tests {
       assert_eq!(rows[1].name, "All songs");
       assert_eq!(app.apple_music_playlists()[0].name, "All songs");
     }
+  }
+
+  #[test]
+  fn apple_music_rows_without_a_count_are_listed_as_uncounted() {
+    let (mut app, _rx) = app();
+    let row = |uri: &str| PlaylistInfo {
+      uri: uri.into(),
+      ..crate::core::test_helpers::playlist_info("p", "x", "", false)
+    };
+    app.append_apple_music_playlists(
+      vec![
+        row("applemusic:playlist:counted"),
+        row("applemusic:playlist:unreadable"),
+      ],
+      vec!["applemusic:playlist:unreadable".into()],
+    );
+    assert_eq!(
+      playlists(&app).apple_music_uncounted,
+      ["applemusic:playlist:unreadable"]
+    );
   }
 
   #[test]
@@ -2956,26 +3121,28 @@ mod tests {
     app.user_config.behavior.language = Language::ZhHant;
     app.refresh_language();
     let changed = pushed(&diff(&before, &app, Language::En), "playlist_sync");
-    assert!(changed["payload"]["links"][0]["last_line"]
-      .as_str()
-      .unwrap()
-      .contains("{added} 五月天"));
+    assert_eq!(
+      changed["payload"]["links"][0]["last_line"],
+      "{added} 五月天：已新增 2 首，已移除 1 首，3 首未對應"
+    );
+    assert_eq!(
+      changed["payload"]["last_summary"],
+      "播放清單同步（模擬執行）：新增 2 首，移除 1 首，未對應 3 首"
+    );
 
     let mut failed = report;
     failed.error = Some("{added} HTTP 503".to_string());
     failed.links[0].outcome = LinkOutcome::Failed("{name} HTTP 503".into());
     app.finish_playlist_sync(failed);
     let localized = playlist_sync(&app);
-    assert!(localized
-      .last_summary
-      .as_deref()
-      .unwrap()
-      .contains("{added} HTTP 503"));
-    assert!(localized.links[0]
-      .last_line
-      .as_deref()
-      .unwrap()
-      .contains("{name} HTTP 503"));
+    assert_eq!(
+      localized.last_summary.as_deref(),
+      Some("播放清單同步失敗：{added} HTTP 503")
+    );
+    assert_eq!(
+      localized.links[0].last_line.as_deref(),
+      Some("{added} 五月天：失敗（{name} HTTP 503）")
+    );
   }
 
   #[test]

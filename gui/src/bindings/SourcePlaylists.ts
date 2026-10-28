@@ -15,6 +15,11 @@ export type SourcePlaylists = { spotify: Array<PlaylistInfo>, local: Array<Playl
  */
 apple_music: Array<PlaylistInfo>, 
 /**
+ * The `apple_music` rows whose count Music has not given: their
+ * `track_count` of 0 is a placeholder, so the page shows no count.
+ */
+apple_music_uncounted: Array<string>, 
+/**
  * Stations are playable rows (`radio:<url>`), not playlists.
  */
 radio: Array<TrackInfo>, 
@@ -30,6 +35,10 @@ saved_albums_has_more: boolean,
  * Spotify's followed artists cached so far; `OpenLibrary(Artists)` fetches them.
  */
 followed_artists: Array<ArtistInfo>, 
+/**
+ * `LoadMore(SavedArtists)` fetches the next page.
+ */
+followed_artists_has_more: boolean, 
 /**
  * Spotify's saved podcast shows cached so far; `OpenLibrary(Podcasts)` fetches them.
  */

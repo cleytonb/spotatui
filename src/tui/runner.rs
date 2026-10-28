@@ -69,14 +69,25 @@ fn dj_captures_key_before_back(app: &App) -> bool {
   app.get_current_route().active_block == ActiveBlock::AiDj
 }
 
+/// An open plugin popup or sort menu gets every key, the back key included.
+fn modal_captures_key_before_back(app: &App) -> bool {
+  app.plugin_popup.is_some() || app.get_current_route().active_block == ActiveBlock::SortMenu
+}
+
 /// Blocks that must see the configurable back key *before* the runner acts on it
 /// themselves. Ordering is the whole point, so this is one predicate rather than
 /// two conditions spelled out at the call site: a screen that is missing here has
 /// its route popped instead of receiving the key, however well its own handler
 /// copes with it.
 fn key_reaches_handlers_before_back(app: &App, key: Key) -> bool {
+  if modal_captures_key_before_back(app) {
+    return true;
+  }
   #[cfg(feature = "ai-dj")]
   if dj_captures_key_before_back(app) {
+    return true;
+  }
+  if handlers::playlist_picker_captures_key(app, key) {
     return true;
   }
   help_menu_captures_key_before_back(app, key)
@@ -123,6 +134,9 @@ fn dispatch_key(key: Key, app: &mut App) -> bool {
       }
       _ => {}
     }
+  } else if app.soloist_offer_shows() || app.soloist_pairing_device().is_some() {
+    // A Soloist modal sits over every screen, an open input included.
+    handlers::handle_app(key, app);
   } else if current_active_block == ActiveBlock::Input {
     handlers::input_handler(key, app);
   } else if key_reaches_handlers_before_back(app, key) {
@@ -153,8 +167,11 @@ fn dispatch_key(key: Key, app: &mut App) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::core::action::Action;
   use crate::core::app::TrackTableContext;
   use crate::core::geometry::Viewport;
+  use crate::core::plugin_api::PluginPopup;
+  use crate::core::sort::SortContext;
   use rspotify::model::idtypes::PlaylistId;
   use std::{sync::mpsc::channel, time::SystemTime};
 
@@ -381,6 +398,21 @@ mod tests {
   }
 
   #[test]
+  fn playlist_picker_search_captures_back_key_while_editing() {
+    let mut app = app();
+    app.push_navigation_stack(
+      RouteId::Dialog,
+      ActiveBlock::Dialog(crate::core::app::DialogContext::AddTrackToPlaylistPicker),
+    );
+    app.view.playlist_picker_filter_editing = true;
+
+    assert!(!dispatch_key(Key::Char('q'), &mut app));
+
+    assert_eq!(app.view.playlist_picker_filter, "q");
+    assert_eq!(app.get_current_route().id, RouteId::Dialog);
+  }
+
+  #[test]
   fn help_filter_captures_back_key_while_editing() {
     let mut app = app();
     app.push_navigation_stack(RouteId::HelpMenu, ActiveBlock::HelpMenu);
@@ -447,6 +479,50 @@ mod tests {
     assert_ne!(app.get_current_route().id, RouteId::TrackTable);
   }
 
+  #[test]
+  fn the_back_key_closes_the_sort_menu_and_keeps_the_playlist_open() {
+    let mut app = app();
+    app.push_navigation_stack(RouteId::TrackTable, ActiveBlock::TrackTable);
+    app.view.sort_context = Some(SortContext::PlaylistTracks);
+    app.view.sort_menu_visible = true;
+    app.set_current_route_state(Some(ActiveBlock::SortMenu), None);
+
+    assert!(!dispatch_key(app.user_config.keys.back, &mut app));
+
+    assert!(!app.view.sort_menu_visible);
+    assert_eq!(app.get_current_route().id, RouteId::TrackTable);
+    assert_eq!(
+      app.get_current_route().active_block,
+      ActiveBlock::Empty,
+      "close_sort_menu leaves the active block empty until another click or key focuses it"
+    );
+  }
+
+  #[test]
+  fn the_back_key_closes_a_plugin_popup_without_leaving_the_screen() {
+    let mut app = app();
+    app.apply(Action::ShowPopup(PluginPopup {
+      title: "t".into(),
+      lines: vec![],
+    }));
+
+    assert!(!dispatch_key(app.user_config.keys.back, &mut app));
+
+    assert!(app.plugin_popup.is_none());
+    assert_eq!(app.get_current_route().id, RouteId::Home);
+
+    app.push_navigation_stack(RouteId::TrackTable, ActiveBlock::TrackTable);
+    app.apply(Action::ShowPopup(PluginPopup {
+      title: "t".into(),
+      lines: vec![],
+    }));
+
+    assert!(!dispatch_key(app.user_config.keys.back, &mut app));
+
+    assert!(app.plugin_popup.is_none());
+    assert_eq!(app.get_current_route().id, RouteId::TrackTable);
+  }
+
   /// `y` at the exit prompt is the one keypress that ends the process, and the
   /// runner's loop reads that from this return value now that the chain is a
   /// function.
@@ -456,6 +532,20 @@ mod tests {
     app.push_navigation_stack(RouteId::ExitPrompt, ActiveBlock::ExitPrompt);
 
     assert!(dispatch_key(Key::Char('y'), &mut app));
+  }
+
+  #[cfg(feature = "soloist")]
+  #[test]
+  fn the_back_key_closes_a_soloist_modal_over_an_input_instead_of_the_screen() {
+    let mut app = app();
+    app.push_navigation_stack(RouteId::Search, ActiveBlock::Input);
+    app.soloist_notice(crate::infra::soloist::Notice::NotPaired);
+    assert!(app.soloist_pairing_device().is_some());
+
+    assert!(!dispatch_key(app.user_config.keys.back, &mut app));
+
+    assert_eq!(app.soloist_pairing_device(), None);
+    assert_eq!(app.get_current_route().active_block, ActiveBlock::Input);
   }
 }
 
@@ -633,6 +723,8 @@ pub async fn start_ui(
           _ => ui::draw_main_layout(f, &app),
         }
 
+        ui::draw_soloist_pairing(f, &app);
+        ui::draw_soloist_offer(f, &app);
         // Plugin popup overlays every screen.
         ui::draw_plugin_popup(f, &app);
 

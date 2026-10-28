@@ -4,6 +4,25 @@
 
 ### Added
 
+- **Search the add-to-playlist picker**: press `/` (the `search` key) in the picker that `w` and `W` open and type part of a playlist name. The list narrows to the matching playlists you can add to, including the ones inside folders. `Enter` keeps the search and a second `Enter` adds the track, `Esc` clears the search, and a second `Esc` closes the picker ([#924](https://github.com/LargeModGames/spotatui/issues/924)).
+
+### Fixed
+
+- **Smoother scrolling in terminal Settings**: Fixed an issue where navigating the Settings list caused the screen to jump erratically. The view now stays stable, scrolling only when your cursor reaches the top or bottom of the box.
+- **The AI DJ prompt's caret follows the cursor**: after Left, Home or a Backspace in the middle of the text, the caret stayed painted at the end of the prompt. It now sits where the next character goes ([#945](https://github.com/LargeModGames/spotatui/issues/945)).
+- **The log's startup line lists every compiled feature**: `features:` left out `soloist`, `gui`, `apple-music`, `spotify-session`, the playback backends and the shared decode features, so a release build with Soloist looked like it had none. A test now fails when a feature in `Cargo.toml` is missing from the list ([#949](https://github.com/LargeModGames/spotatui/issues/949)).
+
+## [v0.47.0] 2026-10-25
+
+### Added
+
+- **Play through Spotify Soloist**: set Settings > Playback Engine (`behavior.playback_engine: soloist`) and spotatui's own Connect device plays through Spotify's official Soloist binary instead of librespot. Soloist plays for accounts where librespot fails with `error audio key 0 1` ([#932](https://github.com/LargeModGames/spotatui/issues/932)), and streams lossless where the account allows it; the playbar shows the quality it streams. Settings has a Download from Spotify button for the binary (`o` in the terminal) and a hidden Soloist API Key row. spotatui does not ship the binary. See [the Soloist guide](https://github.com/LargeModGames/spotatui/blob/main/docs/soloist.md).
+
+- **Filter your playlists in the desktop app**: a filter box under the Your Library chips narrows the playlists of the active source, including the ones inside closed folders.
+- **Seven new visualizer styles**: `V` on the visualizer screen now also cycles through **Head Unit** (an early-2000s car-stereo display: a floor of spectrum strips in perspective under a wall of panels, drawn in Braille dots), **Analog VU** (two needle meters, left and right, with a peak lamp), **Winamp** (scanlined bars with falling peak caps and an oscilloscope strip), **Phosphor Scope** (a green CRT trace with fading phosphor trails and a measured Vpp and frequency), **Outrun** (a striped synthwave sun that pulses with the bass behind a spectrum skyline and a scrolling grid), **Rack EQ** (left and right LED ladders per band with falling peak LEDs) and **Cassette Deck** (turning reels that wind the tape across as the song plays, LED level bars and a tape counter). The choice is saved as `visualizer_style` in `config.yml`. The analyzer now also hands the terminal the last 50 ms of the waveform with each spectrum frame, which the scope styles draw.
+
+- **Gruvbox Cove theme preset**: Gruvbox dark on the standard bg0 background, with green as the main accent, aqua as the second colour, blue hints and yellow kept for warnings only. Pick it with `Alt-,` or set `preset: "Gruvbox Cove"` in `config.yml`.
+
 - **The player bar visualizer takes its colours from the cover**: in the desktop app and the browser GUI on Linux and Windows, the spectrum and the waveform now run through a gradient of the colours on the playing song's cover, darkest at the bass, and fade to the next cover's colours when the album changes. It works for Spotify, YouTube, Qobuz, Subsonic and local files with embedded art; radio and Apple Music keep the accent. A new `visualizer.yml` next to `config.yml` sets every part of the look: the colour source (`cover`, `accent` or your own list, hex accepted), how many cover colours and in what order, if black and grey count, the brightness limits, the blend (`srgb`, `linear` or `oklab`), the fade, and each size, alpha and speed of the bars, caps, glow, pulse and wave lines. spotatui never writes the file, and edits show within a second; a mistyped value keeps its default, a number out of range is clamped, and both show in the status line. See [the themes guide](https://github.com/LargeModGames/spotatui/blob/main/docs/themes.md#player-bar-visualizer-desktop-app-and-browser-gui).
 
 - **The GUI follows your OS reduce-motion setting**: with reduced motion on, the lyrics page and the Room's lyrics column jump to each new line instead of gliding, and switches, folder chevrons and hover slides change without sliding. Turning the setting off brings the motion back, with no reload.
@@ -24,13 +43,35 @@
 
 - **An E badge on explicit songs** in the track lists: a song the server marks explicit shows a small E at the start of its artist line, in playlists, Liked Songs, albums, an artist's Popular songs, song radio and Recently played ([#838](https://github.com/LargeModGames/spotatui/issues/838)).
 
-- **Shared interface language tables**: `behavior.language` selects `auto`, `en`, `zh-Hans`, or `zh-Hant`. The terminal and desktop/browser interfaces now use one typed English catalog, with locale detection and live language switching. Chinese tables follow in stacked translation PRs; until each area lands, selecting Chinese shows its English fallback. CLI output and logs stay English.
+- **Simplified and Traditional Chinese**: `behavior.language` selects `auto`, `en`, `zh-Hans`, or `zh-Hant`. The terminal, the desktop app and the browser GUI share one set of strings, detect the system language, and switch language live. Screens, settings, dialogs, onboarding and status messages are translated. CLI output and logs stay English.
 
 ### Changed
 
 - **Theme-aware folder icons in the terminal**: playlist folders in the sidebar and the playlist picker dialog now use a text glyph (`▸`) that inherits the active theme's text and highlight colors instead of a fixed-color folder emoji ([#882](https://github.com/LargeModGames/spotatui/issues/882)).
 
 ### Fixed
+
+- **Escape and the back key close more screens in the terminal**: `Esc` now closes the audio analysis screen ([#815](https://github.com/LargeModGames/spotatui/issues/815)) and clears an active playlist or Liked Songs filter, like `q`. The back key now closes the sort menu and a plugin popup instead of leaving them on screen over the previous route ([#831](https://github.com/LargeModGames/spotatui/issues/831)).
+
+- **Lists in the terminal no longer jump when you move up**: the search and library lists kept no scroll position between frames, so the view jumped with each step up. They now scroll only when the cursor reaches the top or bottom edge.
+
+- **A sparse listening history still returns the DJ vibe and what is playing**: with fewer than five qualifying plays, `get_listening_history` keeps the vibe from `set_dj_vibe`, the current track, and the same structured keys as a full history (`period`, `total_plays`, `top_artists`, `top_tracks`, `top_albums`, `recent`, `now_playing`, `vibe`). The reply still leads with the line that asks what the listener feels like ([#830](https://github.com/LargeModGames/spotatui/issues/830)).
+
+- **`play --uri` refuses a `--queue` or `--random` its URI cannot honor**: `--queue` with an album, artist, playlist or show URI replaced the playback instead of queueing, and `--random` with anything but a playlist URI was ignored. Both now exit with an error before playback changes ([#827](https://github.com/LargeModGames/spotatui/issues/827)).
+
+- **Saved Albums goes back to newest saved first on Default**: picking Default in the sort menu after another sort left the list in that order until the next refetch, because Default had no case in the sort. It now orders each page by when the album was saved, newest first, whatever the previous order was ([#817](https://github.com/LargeModGames/spotatui/issues/817)).
+
+- **Jump and Listening Party keys can be rebound in Settings**: the Keybindings tab now includes Jump to Start, Jump to End and Listening Party ([#828](https://github.com/LargeModGames/spotatui/issues/828)).
+
+- **`playback --repeat` now advances repeat modes** from Off to Context to Track instead of sending the current mode ([#816](https://github.com/LargeModGames/spotatui/issues/816)).
+
+- **Apple Music playlists show their real song counts** in the desktop app and the browser GUI: every playlist in Your Library, "All songs" included, said `0 songs`, because the count was never read from Music. It now is, one playlist at a time, which adds about 8 ms per playlist to loading the sidebar; a playlist whose count Music cannot read shows no number rather than a wrong 0 ([#891](https://github.com/LargeModGames/spotatui/issues/891)).
+
+- **Local Files folders and track names sort case-insensitively**: both sorts compared names by raw byte order, so every capital letter sorted before every lowercase one and mixed-case libraries looked unsorted. The folder list and the name fallback for untagged tracks now compare lowercased names, with byte order as a stable tiebreak ([#824](https://github.com/LargeModGames/spotatui/issues/824)).
+
+- **Radio falls back to station information for blank titles**: empty or dash-only ICY titles no longer blank the playbar subtitle or the artist sent to media integrations ([#820](https://github.com/LargeModGames/spotatui/issues/820)).
+
+- **No more random audio dropouts on macOS USB outputs** while local files, Subsonic or YouTube tracks play: the once-a-second check for a changed default output device rebuilt two CoreAudio units each time, which made USB devices glitch. It now reads the device's stable id instead ([#928](https://github.com/LargeModGames/spotatui/issues/928)).
 
 - **The page no longer scrolls past the player bar when a list has explicit songs** in the desktop app and the browser GUI: the hidden screen-reader text next to each E badge had no anchor, so it stretched the document below the window and the whole page could scroll into empty space. The text is now anchored and clipped, so only the panels inside the page scroll ([#878](https://github.com/LargeModGames/spotatui/issues/878)).
 
@@ -43,6 +84,8 @@
 - **A clear hint when ALSA has no default device**: with PipeWire but no ALSA bridge, pressing play used to show a cut-off "Connection Refused" error. The status line now says ALSA has no default device and suggests installing `pipewire-alsa`, and the native streaming docs have a No sound section ([#848](https://github.com/LargeModGames/spotatui/issues/848)).
 
 - **Subsonic usernames with special characters can log in**: a username with `+`, `&`, `#`, `%`, `=` or a space is now percent-encoded in every request, so the server no longer answers with error 40 ([#814](https://github.com/LargeModGames/spotatui/issues/814)).
+
+- **Plugin playbar text stays while another source plays**: text a plugin sets with `spotatui.set_playbar` now stays in the playbar title for Local Files, Subsonic, Qobuz, internet radio, YouTube, the queue, and Apple Music, after any status message, as it already did for Spotify ([#823](https://github.com/LargeModGames/spotatui/issues/823)).
 
 ## [v0.46.0] 2026-10-14
 

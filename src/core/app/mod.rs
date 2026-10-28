@@ -16,7 +16,9 @@ use crate::core::user_config::{
   VisualizerStyle,
 };
 use crate::infra::history::{RecapPeriod, StatsData, StreakSummary};
-use crate::infra::network::sync::{ControlMode, PartySession, PartyStatus};
+use crate::infra::network::sync::{
+  ControlMode, PartyRole, PartySession, PartyStatus, PlaybackAction,
+};
 use crate::infra::network::IoEvent;
 #[cfg(feature = "queue")]
 use crate::infra::queue::QueueNowPlaying;
@@ -99,6 +101,8 @@ mod display_revisions;
 mod dj;
 mod friends;
 mod help;
+#[cfg(not(target_os = "android"))]
+mod keep_awake;
 mod keybindings;
 mod layout;
 mod library;
@@ -129,6 +133,8 @@ mod session;
 mod settings_apply;
 mod settings_schema;
 mod shuffle_repeat;
+#[cfg(feature = "soloist")]
+mod soloist;
 mod status;
 mod tick;
 mod transport;
@@ -445,7 +451,7 @@ pub struct App {
   native_shuffle_generation: u64,
   /// Prevent idle/sleep during playback
   #[cfg(not(target_os = "android"))]
-  keepawake: Option<keepawake::KeepAwake>,
+  keepawake: keep_awake::KeepAwake,
   /// Timestamp of the last native device activation
   #[allow(dead_code)]
   pub last_device_activation: Option<Instant>,
@@ -455,6 +461,9 @@ pub struct App {
   /// Another device took playback over; the idle poll must not reclaim it (#693)
   #[cfg(feature = "streaming")]
   native_handed_off: bool,
+  /// The unavailable-track guard stopped librespot; only a new load plays again
+  #[cfg(feature = "streaming")]
+  native_unavailable_halt: bool,
   /// A bare resume already tried to pull the handed-off playback back
   #[cfg(feature = "streaming")]
   native_handoff_resume_tried: bool,
@@ -563,6 +572,23 @@ pub struct App {
   /// Reference to the native streaming player for direct control (bypasses event channel)
   #[cfg(feature = "streaming")]
   pub streaming_player: Option<Arc<crate::infra::player::StreamingPlayer>>,
+  /// The running Soloist engine; `streaming_player` stays `None` while it is set.
+  #[cfg(feature = "soloist")]
+  soloist_link: Option<Arc<crate::infra::soloist::SoloistLink>>,
+  /// A Soloist download from Spotify runs.
+  #[cfg(feature = "soloist")]
+  soloist_downloading: bool,
+  /// The librespot recovery sender while Soloist is the engine, for a switch back.
+  #[cfg(feature = "soloist")]
+  librespot_standby:
+    Option<tokio::sync::mpsc::UnboundedSender<crate::infra::player::StreamingRecoveryRequest>>,
+  /// The Soloist pairing guide shows: Soloist waits for its first login.
+  soloist_pairing: bool,
+  /// The offer to set up Soloist shows, after librespot failed several tracks in a row.
+  soloist_offer: bool,
+  /// That offer was made in this run; it shows once.
+  #[cfg(feature = "soloist")]
+  soloist_offered: bool,
   /// Player-global repeat mode for the decoded (non-Spotify) sources
   /// (Local / Subsonic / YouTube). Decoded sources have no Spotify
   /// `current_playback_context`, so their repeat lives here instead of in

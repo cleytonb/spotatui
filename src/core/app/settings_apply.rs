@@ -82,7 +82,9 @@ impl App {
     }
   }
 
-  /// Cycles Cava, Bar Graph, then the Spotify pitch view while a Spotify track plays.
+  /// Cycles through every style in `VisualizerStyle::all()` order (Cava, Bar
+  /// Graph, Head Unit, Analog VU, Winamp, Phosphor Scope, Outrun, Rack EQ,
+  /// Cassette Deck), then the Spotify pitch view while a Spotify track plays.
   /// The pitch view is not saved: it is the default for every Spotify track.
   pub(crate) fn cycle_visualizer_style(&mut self) {
     let style = self.user_config.behavior.visualizer_style;
@@ -109,6 +111,8 @@ impl App {
 
     let mut settings_error: Option<String> = None;
     let sources_before = self.source_settings();
+    #[cfg(feature = "soloist")]
+    let engine_before = self.user_config.behavior.playback_engine;
     // What is actually on screen right now, put back by the reconciliation at
     // the end so an adaptive-theme fade continues from it.
     let theme_before = self.user_config.theme;
@@ -323,6 +327,26 @@ impl App {
         "behavior.streaming_autoplay" => {
           if let SettingValue::Bool(v) = &setting.value {
             self.user_config.behavior.streaming_autoplay = *v;
+          }
+        }
+        #[cfg(feature = "soloist")]
+        "behavior.playback_engine" => {
+          if let SettingValue::Cycle(v, _) = &setting.value {
+            self.user_config.behavior.playback_engine =
+              crate::core::user_config::PlaybackEngine::from_name(v);
+          }
+        }
+        #[cfg(feature = "soloist")]
+        "behavior.soloist_path" => {
+          if let SettingValue::String(v) = &setting.value {
+            self.user_config.behavior.soloist_path = trimmed(v);
+          }
+        }
+        #[cfg(feature = "soloist")]
+        "behavior.soloist_audio_quality" => {
+          if let SettingValue::Cycle(v, _) = &setting.value {
+            self.user_config.behavior.soloist_audio_quality =
+              crate::core::user_config::SoloistQuality::from_name(v);
           }
         }
         "behavior.enable_announcements" => {
@@ -581,6 +605,20 @@ impl App {
             }
           }
         }
+        "keys.jump_to_start" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::core::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.jump_to_start = key;
+            }
+          }
+        }
+        "keys.jump_to_end" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::core::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.jump_to_end = key;
+            }
+          }
+        }
         "keys.toggle_playback" => {
           if let SettingValue::Key(v) = &setting.value {
             if let Ok(key) = crate::core::user_config::parse_key_public(v.clone()) {
@@ -690,6 +728,13 @@ impl App {
           if let SettingValue::Key(v) = &setting.value {
             if let Ok(key) = crate::core::user_config::parse_key_public(v.clone()) {
               self.user_config.keys.manage_devices = key;
+            }
+          }
+        }
+        "keys.listening_party" => {
+          if let SettingValue::Key(v) = &setting.value {
+            if let Ok(key) = crate::core::user_config::parse_key_public(v.clone()) {
+              self.user_config.keys.listening_party = key;
             }
           }
         }
@@ -940,6 +985,10 @@ impl App {
         _ => {}
       }
     }
+    #[cfg(feature = "soloist")]
+    if !self.save_soloist_key_row() && self.user_config.behavior.playback_engine != engine_before {
+      self.playback_engine_changed();
+    }
     self.refresh_language();
     self.refresh_settings_labels();
     #[cfg(feature = "art-decode")]
@@ -1021,7 +1070,12 @@ impl App {
 }
 
 /// A text setting without its padding; empty means unset.
-#[cfg(any(feature = "subsonic", feature = "local-files", feature = "youtube"))]
+#[cfg(any(
+  feature = "subsonic",
+  feature = "local-files",
+  feature = "youtube",
+  feature = "soloist"
+))]
 fn trimmed(value: &str) -> Option<String> {
   Some(value.trim().to_string()).filter(|value| !value.is_empty())
 }
@@ -1030,15 +1084,6 @@ fn trimmed(value: &str) -> Option<String> {
 mod tests {
   use super::*;
   use crate::core::app::test_support::*;
-
-  fn setting(id: &str, value: SettingValue) -> SettingItem {
-    SettingItem {
-      id: id.to_string(),
-      name: String::new(),
-      description: String::new(),
-      value,
-    }
-  }
 
   #[test]
   fn saving_a_theme_preset_bumps_the_theme_revision_and_an_unrelated_save_does_not() {

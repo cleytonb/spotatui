@@ -53,6 +53,7 @@ use crate::core::source::Source;
 use crate::tui::event::Key;
 
 pub use announcement_prompt::dismiss as dismiss_announcement;
+pub(crate) use dialog::playlist_picker_captures_key;
 pub use input::handler as input_handler;
 pub use mouse::handler as mouse_handler;
 
@@ -92,6 +93,9 @@ pub fn handle_app(key: Key, app: &mut App) {
       Key::Esc | Key::Char('q') => {
         app.apply(Action::ClosePopup);
       }
+      k if k == app.user_config.keys.back => {
+        app.apply(Action::ClosePopup);
+      }
       k if common_key_events::up_event(k, &app.user_config.keys) => {
         app.view.plugin_popup_scroll = app.view.plugin_popup_scroll.saturating_sub(1);
       }
@@ -112,12 +116,36 @@ pub fn handle_app(key: Key, app: &mut App) {
     return;
   }
 
+  if app.soloist_offer_shows() {
+    if key == Key::Enter {
+      app.apply(Action::AnswerSoloistOffer { set_up: true });
+    } else if matches!(key, Key::Esc | Key::Char('q')) || key == app.user_config.keys.back {
+      app.apply(Action::AnswerSoloistOffer { set_up: false });
+    }
+    return;
+  }
+
+  // The Soloist pairing guide is a modal too, under the plugin popup.
+  if app.soloist_pairing_device().is_some() {
+    if matches!(key, Key::Esc | Key::Enter | Key::Char('q')) || key == app.user_config.keys.back {
+      app.apply(Action::DismissSoloistPairing);
+    }
+    return;
+  }
+
   // Help filtering is an inline modal input. Give it priority over global
   // bindings so queries can contain keys such as d, n, p, q, or ?.
   if app.get_current_route().active_block == ActiveBlock::HelpMenu
     && (app.view.help_filter_editing || key == app.user_config.keys.search)
   {
     help_menu::handler(key, app);
+    return;
+  }
+
+  // The add-to-playlist picker's search is an inline input too: typed playlist
+  // names must not trigger global bindings.
+  if dialog::playlist_picker_captures_key(app, key) {
+    handle_block_events(key, app);
     return;
   }
 
@@ -128,7 +156,8 @@ pub fn handle_app(key: Key, app: &mut App) {
     && (app.view.settings_unsaved_prompt_visible
       || app.view.settings_edit_mode
       || app.view.settings_filter_editing
-      || key == app.user_config.keys.search)
+      || key == app.user_config.keys.search
+      || (key == settings::BUTTON_KEY && settings::selected_row_has_button(app)))
   {
     settings::handler(key, app);
     return;

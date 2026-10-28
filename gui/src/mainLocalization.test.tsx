@@ -37,10 +37,12 @@ const lists: SourcePlaylists = {
   qobuz: [],
   youtube: [],
   apple_music: [],
+  apple_music_uncounted: [],
   radio: [],
   saved_albums: [],
   saved_albums_has_more: false,
   followed_artists: [],
+  followed_artists_has_more: false,
   saved_shows: [],
   saved_shows_has_more: false,
   saved_show_ids: [],
@@ -122,6 +124,7 @@ describe("main additions in the shared languages", () => {
       const html = renderToStaticMarkup(
         <PodcastPage
           s={s}
+          view={{}}
           id="show"
           name="節目 {count}"
           show={{
@@ -141,6 +144,8 @@ describe("main additions in the shared languages", () => {
               has_more: false,
             },
           }}
+          statusRev={0}
+          statusError={false}
           playingUri={episode.uri}
           active
           open={noop}
@@ -222,6 +227,7 @@ describe("main additions in the shared languages", () => {
       const html = renderToStaticMarkup(
         <RadioPage
           s={s}
+          view={{}}
           id="seed"
           name="{name} 歌"
           table={null}

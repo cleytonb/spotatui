@@ -3,6 +3,7 @@ import type { Action } from "./bindings/Action";
 import type { AlbumInfo } from "./bindings/AlbumInfo";
 import type { ArtistInfo } from "./bindings/ArtistInfo";
 import type { LibraryNode } from "./bindings/LibraryNode";
+import type { ListTarget } from "./bindings/ListTarget";
 import type { PlaylistInfo } from "./bindings/PlaylistInfo";
 import type { QueuePayload } from "./bindings/QueuePayload";
 import type { Source } from "./bindings/Source";
@@ -56,7 +57,24 @@ export function playlistsFor(
       count: null,
       image: station.image_url,
     }));
-  return playlists[PLAYLIST_KEYS[source]].map(sidebarRow);
+  // A Music row whose count Music has not given carries a placeholder 0.
+  const uncounted = new Set(
+    source === "AppleMusic" ? playlists.apple_music_uncounted : [],
+  );
+  return playlists[PLAYLIST_KEYS[source]].map((playlist) => {
+    const row = sidebarRow(playlist);
+    return uncounted.has(row.uri) ? { ...row, count: null } : row;
+  });
+}
+
+/** Every search term must occur in the fields; a blank query matches everything. */
+export function matchesFilter(
+  needle: string,
+  ...fields: (string | null | undefined)[]
+): boolean {
+  const terms = needle.toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = fields.filter(Boolean).join(" ").toLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }
 
 /** The cursor kept inside the list; -1 for an empty list. */
@@ -406,6 +424,35 @@ export function wantsNextPage(
   askedFor: unknown,
 ): boolean {
   return atEnd && hasMore && list !== askedFor;
+}
+
+/** The list a Library filter pages through: its LoadMore target, the list shown and whether more remain. */
+export function libraryPager(
+  filter: "Playlists" | "Albums" | "Artists" | "Podcasts",
+  playlists: SourcePlaylists | null,
+): { target: ListTarget; list: unknown; more: boolean } | null {
+  switch (filter) {
+    case "Albums":
+      return {
+        target: "SavedAlbums",
+        list: playlists?.saved_albums,
+        more: playlists?.saved_albums_has_more ?? false,
+      };
+    case "Artists":
+      return {
+        target: "SavedArtists",
+        list: playlists?.followed_artists,
+        more: playlists?.followed_artists_has_more ?? false,
+      };
+    case "Podcasts":
+      return {
+        target: "SavedShows",
+        list: playlists?.saved_shows,
+        more: playlists?.saved_shows_has_more ?? false,
+      };
+    case "Playlists":
+      return null;
+  }
 }
 
 const FOLDERS_KEY = "spotatui.library.expandedFolders";

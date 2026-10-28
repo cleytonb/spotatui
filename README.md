@@ -94,7 +94,7 @@ Then:
 
 Local Files, Subsonic, Internet Radio, YouTube and Qobuz play through spotatui's own audio engine. Apple Music plays in the Music app, and spotatui is its remote. The setup of each source is in [Configuration](docs/configuration.md).
 
-Spotify plays in spotatui itself, on any Spotify Connect device, or on Cast and Connect speakers on your network. See [Where Spotify plays](docs/native-streaming.md#where-spotify-plays).
+Spotify plays in spotatui itself, on any Spotify Connect device, or on Cast and Connect speakers on your network. See [Where Spotify plays](docs/native-streaming.md#where-spotify-plays). For lossless audio, or an account that native streaming cannot play, spotatui can run Spotify's own player: see [Soloist](docs/soloist.md).
 
 ## Learn more
 
@@ -241,6 +241,18 @@ Everyone who helped, with code or without. To get on this list, see [Recognition
     </tr>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://codedbearder.com"><img src="https://avatars.githubusercontent.com/u/1291396?v=4?s=100" width="100px;" alt="Arnar"/><br /><sub><b>Arnar</b></sub></a><br /><a href="#platform-arnarg" title="Packaging/porting to new platform">📦</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/OpenR00t"><img src="https://avatars.githubusercontent.com/u/17520570?v=4?s=100" width="100px;" alt="OpenR00t"/><br /><sub><b>OpenR00t</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=OpenR00t" title="Code">💻</a> <a href="#design-OpenR00t" title="Design">🎨</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/mvanhorn"><img src="https://avatars.githubusercontent.com/u/455140?v=4?s=100" width="100px;" alt="Matt Van Horn"/><br /><sub><b>Matt Van Horn</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=mvanhorn" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/devtechedge"><img src="https://avatars.githubusercontent.com/u/294291171?v=4?s=100" width="100px;" alt="Dev M"/><br /><sub><b>Dev M</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=devtechedge" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/montionugera"><img src="https://avatars.githubusercontent.com/u/5601426?v=4?s=100" width="100px;" alt="Pasit Nusso"/><br /><sub><b>Pasit Nusso</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=montionugera" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/psymariux"><img src="https://avatars.githubusercontent.com/u/238106931?v=4?s=100" width="100px;" alt="PsyMariux"/><br /><sub><b>PsyMariux</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=psymariux" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/uznog"><img src="https://avatars.githubusercontent.com/u/65494005?v=4?s=100" width="100px;" alt="Konrad Baran"/><br /><sub><b>Konrad Baran</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=uznog" title="Code">💻</a></td>
+    </tr>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/zaydmulani09"><img src="https://avatars.githubusercontent.com/u/257340907?v=4?s=100" width="100px;" alt="zayd"/><br /><sub><b>zayd</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=zaydmulani09" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/BartholomewJr"><img src="https://avatars.githubusercontent.com/u/348017353?v=4?s=100" width="100px;" alt="BartholomewJr"/><br /><sub><b>BartholomewJr</b></sub></a><br /><a href="#financial-BartholomewJr" title="Financial">💵</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://my-portafolio-plum.vercel.app/"><img src="https://avatars.githubusercontent.com/u/83091452?v=4?s=100" width="100px;" alt="Yiuseppe24"/><br /><sub><b>Yiuseppe24</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=JosephAnderson234" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="http://www.anuragx.in"><img src="https://avatars.githubusercontent.com/u/62888566?v=4?s=100" width="100px;" alt="anurag verma"/><br /><sub><b>anurag verma</b></sub></a><br /><a href="https://github.com/LargeModGames/spotatui/commits?author=deauthe" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>

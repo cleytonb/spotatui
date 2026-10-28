@@ -12,6 +12,17 @@ pub use zh_hant::ZH_HANT;
 pub struct SettingsStrings {
   pub behavior_ytdlp_path_description: &'static str,
   pub behavior_ytdlp_path_name: &'static str,
+  pub behavior_playback_engine_name: &'static str,
+  pub behavior_playback_engine_description: &'static str,
+  pub behavior_soloist_path_name: &'static str,
+  pub behavior_soloist_path_description: &'static str,
+  pub soloist_download_button: &'static str,
+  pub soloist_downloading_button: &'static str,
+  pub behavior_soloist_api_key_name: &'static str,
+  pub behavior_soloist_api_key_description: &'static str,
+  pub soloist_get_key_button: &'static str,
+  pub behavior_soloist_audio_quality_name: &'static str,
+  pub behavior_soloist_audio_quality_description: &'static str,
   pub behavior_local_music_path_description: &'static str,
   pub behavior_local_music_path_name: &'static str,
   pub behavior_visualizer_input_device_description: &'static str,
@@ -164,6 +175,10 @@ pub struct SettingsStrings {
   pub keys_next_page_description: &'static str,
   pub keys_previous_page_name: &'static str,
   pub keys_previous_page_description: &'static str,
+  pub keys_jump_to_start_name: &'static str,
+  pub keys_jump_to_start_description: &'static str,
+  pub keys_jump_to_end_name: &'static str,
+  pub keys_jump_to_end_description: &'static str,
   pub keys_toggle_playback_name: &'static str,
   pub keys_toggle_playback_description: &'static str,
   pub keys_seek_backwards_name: &'static str,
@@ -196,6 +211,8 @@ pub struct SettingsStrings {
   pub keys_jump_to_context_description: &'static str,
   pub keys_manage_devices_name: &'static str,
   pub keys_manage_devices_description: &'static str,
+  pub keys_listening_party_name: &'static str,
+  pub keys_listening_party_description: &'static str,
   pub keys_decrease_volume_name: &'static str,
   pub keys_decrease_volume_description: &'static str,
   pub keys_increase_volume_name: &'static str,
@@ -385,6 +402,21 @@ impl SettingsStrings {
       "behavior.visualizer_input_device" => (
         self.behavior_visualizer_input_device_name,
         self.behavior_visualizer_input_device_description,
+      "behavior.playback_engine" => (
+        self.behavior_playback_engine_name,
+        self.behavior_playback_engine_description,
+      ),
+      "behavior.soloist_path" => (
+        self.behavior_soloist_path_name,
+        self.behavior_soloist_path_description,
+      ),
+      "behavior.soloist_api_key" => (
+        self.behavior_soloist_api_key_name,
+        self.behavior_soloist_api_key_description,
+      ),
+      "behavior.soloist_audio_quality" => (
+        self.behavior_soloist_audio_quality_name,
+        self.behavior_soloist_audio_quality_description,
       ),
       "behavior.local_music_path" => (
         self.behavior_local_music_path_name,
@@ -668,6 +700,14 @@ impl SettingsStrings {
         self.keys_previous_page_name,
         self.keys_previous_page_description,
       ),
+      "keys.jump_to_start" => (
+        self.keys_jump_to_start_name,
+        self.keys_jump_to_start_description,
+      ),
+      "keys.jump_to_end" => (
+        self.keys_jump_to_end_name,
+        self.keys_jump_to_end_description,
+      ),
       "keys.toggle_playback" => (
         self.keys_toggle_playback_name,
         self.keys_toggle_playback_description,
@@ -716,6 +756,10 @@ impl SettingsStrings {
       "keys.manage_devices" => (
         self.keys_manage_devices_name,
         self.keys_manage_devices_description,
+      ),
+      "keys.listening_party" => (
+        self.keys_listening_party_name,
+        self.keys_listening_party_description,
       ),
       "keys.decrease_volume" => (
         self.keys_decrease_volume_name,

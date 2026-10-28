@@ -12,7 +12,9 @@ import {
   createPlaylistAction,
   createsPlaylists,
   focusAfterAsk,
+  libraryPager,
   libraryTree,
+  matchesFilter,
   listPlayRequest,
   loadExpanded,
   nearEnd,
@@ -56,10 +58,12 @@ const empty: SourcePlaylists = {
   qobuz: [],
   youtube: [],
   apple_music: [],
+  apple_music_uncounted: [],
   radio: [],
   saved_albums: [],
   saved_albums_has_more: false,
   followed_artists: [],
+  followed_artists_has_more: false,
   saved_shows: [],
   saved_shows_has_more: false,
   saved_show_ids: [],
@@ -140,6 +144,37 @@ describe("playlistsFor", () => {
     expect(playlistsFor(playlists, "AppleMusic")).toEqual([
       { uri: "applemusic:library", name: "All songs", count: 0, image: null },
     ]);
+    // A Music row whose count Music has not given shows none, not 0.
+    expect(
+      playlistsFor(
+        { ...playlists, apple_music_uncounted: ["applemusic:library"] },
+        "AppleMusic",
+      ),
+    ).toEqual([
+      {
+        uri: "applemusic:library",
+        name: "All songs",
+        count: null,
+        image: null,
+      },
+    ]);
+  });
+});
+
+describe("matchesFilter", () => {
+  it("matches every word in any field, ignoring case", () => {
+    expect(matchesFilter("ROAD", "Road trip")).toBe(true);
+    expect(matchesFilter("trip road", "Road trip")).toBe(true);
+    expect(matchesFilter("  trip   ROAD  ", "Road trip")).toBe(true);
+    expect(matchesFilter("adele 21", "21", "Adele")).toBe(true);
+    expect(matchesFilter("adele 25", "21", "Adele")).toBe(false);
+    expect(matchesFilter("nyt", "The Daily", null)).toBe(false);
+  });
+
+  it("matches everything for a blank query", () => {
+    expect(matchesFilter("", "Road trip")).toBe(true);
+    expect(matchesFilter("   ", "Road trip")).toBe(true);
+    expect(matchesFilter("", null, undefined)).toBe(true);
   });
 });
 
@@ -565,5 +600,22 @@ describe("expanded folders storage", () => {
     };
     expect(loadExpanded(blocked).size).toBe(0);
     expect(() => saveExpanded(blocked, new Set(["f:a"]))).not.toThrow();
+  });
+});
+
+describe("libraryPager", () => {
+  it("pages the followed artists with their own has-more flag", () => {
+    const lists = { ...empty, followed_artists_has_more: true };
+    expect(libraryPager("Artists", lists)).toEqual({
+      target: "SavedArtists",
+      list: lists.followed_artists,
+      more: true,
+    });
+  });
+
+  it("pages albums and podcasts, and leaves playlists alone", () => {
+    expect(libraryPager("Albums", empty)?.target).toBe("SavedAlbums");
+    expect(libraryPager("Podcasts", empty)?.target).toBe("SavedShows");
+    expect(libraryPager("Playlists", empty)).toBe(null);
   });
 });

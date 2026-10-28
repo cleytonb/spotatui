@@ -14,6 +14,7 @@ import {
   libraryFolders,
   libraryUnavailable,
   onboarding,
+  onboardingConfirm,
   playing,
   podcast,
   podcastSearch,
@@ -58,6 +59,12 @@ test("onboarding", async ({ page }) => {
   await openWith(page, [hello, onboarding]);
   await page.getByText("Choose your music sources").waitFor();
   await shot(page, "onboarding");
+});
+
+test("onboarding question", async ({ page }) => {
+  await openWith(page, [hello, onboardingConfirm]);
+  await page.getByText("Would you like to participate?").waitFor();
+  await shot(page, "onboarding-question");
 });
 
 test("playing", async ({ page }) => {
@@ -177,11 +184,71 @@ test("status error", async ({ page }) => {
         message: null,
         is_error: false,
         api_error: "Spotify refused the request: 403 Forbidden",
+        soloist_pairing: null,
+        soloist_offer: null,
       },
     },
   ]);
   await page.getByRole("alert").waitFor();
   await shot(page, "status-error");
+});
+
+test("soloist pairing", async ({ page }) => {
+  await openWith(page, [
+    ...playing,
+    ...library,
+    {
+      kind: "status",
+      rev: 1,
+      payload: {
+        message: null,
+        is_error: false,
+        api_error: null,
+        soloist_pairing: {
+          title: "Pair spotatui with Spotify",
+          steps: [
+            "1. Open Spotify on a computer on this network.",
+            "2. In its device menu, pick 'spotatui'.",
+          ],
+          waiting: "Waiting for Spotify…",
+          close: "Close",
+        },
+        soloist_offer: null,
+      },
+    },
+  ]);
+  await page.getByRole("dialog").waitFor();
+  await shot(page, "soloist-pairing");
+});
+
+test("soloist offer", async ({ page }) => {
+  await openWith(page, [
+    ...playing,
+    ...library,
+    {
+      kind: "status",
+      rev: 1,
+      payload: {
+        message: null,
+        is_error: false,
+        api_error: null,
+        soloist_pairing: null,
+        soloist_offer: {
+          title: "Play through Soloist?",
+          body: "Spotify refuses librespot the audio keys for these tracks, as it does for some accounts. Soloist, Spotify's own player, can play them. It needs Premium. In Settings:",
+          steps: [
+            "1. Soloist Path: Download from Spotify.",
+            "2. Soloist API Key: Get a key, then enter it.",
+            "3. Playback Engine: Soloist.",
+          ],
+          set_up: "Set up Soloist",
+          not_now: "Not now",
+        },
+      },
+    },
+  ]);
+  await page.getByRole("dialog").waitFor();
+  await shot(page, "soloist-offer");
 });
 
 test("queue panel", async ({ page }) => {
@@ -450,6 +517,46 @@ test("library folders", async ({ page }) => {
     Promise.all(document.getAnimations().map((motion) => motion.finished)),
   );
   await shot(page, "library-folders");
+});
+
+test("library filter", async ({ page }) => {
+  await openWith(page, [...playing, ...libraryFolders]);
+
+  const panel = page.getByRole("navigation", {
+    name: "Your Library",
+  });
+  const input = panel.getByRole("searchbox", {
+    name: "Filter Your Library",
+    exact: true,
+  });
+  const folder = panel.getByRole("button", {
+    name: /Chill & focus/,
+  });
+  const film = panel.getByRole("button", {
+    name: /Film scores/,
+  });
+
+  // A playlist inside a closed folder must still be found.
+  await folder.waitFor();
+  await input.fill("film");
+  await film.waitFor();
+  await folder.waitFor({ state: "hidden" });
+  await page.mouse.move(0, 0);
+  await shot(page, "library-filter");
+
+  // Clearing the query restores the closed folder.
+  await input.fill("");
+  await folder.waitFor();
+  await film.waitFor({ state: "hidden" });
+
+  // An open folder also stays open after filtering and clearing.
+  await folder.click();
+  await film.waitFor();
+  await input.fill("film");
+  await folder.waitFor({ state: "hidden" });
+  await input.fill("");
+  await folder.waitFor();
+  await film.waitFor();
 });
 
 test("playlist menu", async ({ page }) => {

@@ -224,11 +224,36 @@ pub enum VisualizerStyle {
   Cava,
   /// BarGraph mode: Uses tui-bar-graph with Braille patterns for high-resolution display
   BarGraph,
+  /// Head Unit mode: a 2000s car-stereo VFD spectrum in perspective, with
+  /// peak caps, a level meter and a segment-digit clock
+  HeadUnit,
+  /// Analog VU: two backlit 1970s hi-fi needle meters, left and right
+  AnalogVu,
+  /// Winamp: the classic player's scanlined bars, peak caps and scope strip
+  Winamp,
+  /// Phosphor Scope: a green CRT oscilloscope with phosphor trails
+  PhosphorScope,
+  /// Outrun: synthwave sun, spectrum skyline and a scrolling neon grid
+  Outrun,
+  /// Rack EQ: an 80s rack-unit analyzer with left/right LED ladders
+  RackEq,
+  /// Cassette Deck: turning reels, LED level bars and a tape counter
+  Cassette,
 }
 
 impl VisualizerStyle {
   pub fn all() -> &'static [VisualizerStyle] {
-    &[VisualizerStyle::Cava, VisualizerStyle::BarGraph]
+    &[
+      VisualizerStyle::Cava,
+      VisualizerStyle::BarGraph,
+      VisualizerStyle::HeadUnit,
+      VisualizerStyle::AnalogVu,
+      VisualizerStyle::Winamp,
+      VisualizerStyle::PhosphorScope,
+      VisualizerStyle::Outrun,
+      VisualizerStyle::RackEq,
+      VisualizerStyle::Cassette,
+    ]
   }
 
   pub fn next(&self) -> Self {
@@ -308,6 +333,83 @@ impl StartupBehavior {
       "Play" => StartupBehavior::Play,
       "Pause" => StartupBehavior::Pause,
       _ => StartupBehavior::Continue,
+    }
+  }
+}
+
+/// What plays the audio behind spotatui's own Connect device.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlaybackEngine {
+  #[default]
+  Librespot,
+  /// Spotify Soloist, a binary the user downloads from Spotify.
+  Soloist,
+}
+
+#[cfg(feature = "soloist")]
+impl PlaybackEngine {
+  pub fn name(self) -> &'static str {
+    match self {
+      PlaybackEngine::Librespot => "librespot",
+      PlaybackEngine::Soloist => "Soloist",
+    }
+  }
+
+  pub fn options() -> &'static [&'static str] {
+    &["librespot", "Soloist"]
+  }
+
+  pub fn from_name(name: &str) -> Self {
+    match name {
+      "Soloist" => PlaybackEngine::Soloist,
+      _ => PlaybackEngine::Librespot,
+    }
+  }
+}
+
+/// The stream quality Soloist asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SoloistQuality {
+  Normal,
+  High,
+  VeryHigh,
+  #[default]
+  Lossless,
+}
+
+#[cfg(feature = "soloist")]
+impl SoloistQuality {
+  pub fn name(self) -> &'static str {
+    match self {
+      SoloistQuality::Normal => "Normal",
+      SoloistQuality::High => "High",
+      SoloistQuality::VeryHigh => "Very high",
+      SoloistQuality::Lossless => "Lossless",
+    }
+  }
+
+  pub fn options() -> &'static [&'static str] {
+    &["Normal", "High", "Very high", "Lossless"]
+  }
+
+  pub fn from_name(name: &str) -> Self {
+    match name {
+      "Normal" => SoloistQuality::Normal,
+      "High" => SoloistQuality::High,
+      "Very high" => SoloistQuality::VeryHigh,
+      _ => SoloistQuality::Lossless,
+    }
+  }
+
+  /// Spotify's `audio.play_bitrate_enumeration`; only 5 (FLAC) is measured on Soloist.
+  pub fn enumeration(self) -> u8 {
+    match self {
+      SoloistQuality::Normal => 2,
+      SoloistQuality::High => 3,
+      SoloistQuality::VeryHigh => 4,
+      SoloistQuality::Lossless => 5,
     }
   }
 }
@@ -670,6 +772,9 @@ pub struct BehaviorConfigString {
   pub subsonic_username: Option<String>,
   pub subsonic_password: Option<String>,
   pub ytdlp_path: Option<String>,
+  pub playback_engine: Option<PlaybackEngine>,
+  pub soloist_path: Option<String>,
+  pub soloist_audio_quality: Option<SoloistQuality>,
   pub qobuz_quality: Option<u8>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub radio_stations: Option<Vec<RadioStationConfig>>,
@@ -873,6 +978,11 @@ pub struct BehaviorConfig {
   /// Path to the `yt-dlp` binary used by the YouTube source. `None` resolves
   /// plain `yt-dlp` through `$PATH`.
   pub ytdlp_path: Option<String>,
+  /// What plays behind the Native Streaming device; a change in Settings switches at once.
+  pub playback_engine: PlaybackEngine,
+  /// Path to the Soloist binary the user downloaded from Spotify.
+  pub soloist_path: Option<String>,
+  pub soloist_audio_quality: SoloistQuality,
   /// Qobuz stream quality: 5 (MP3 320), 6 (FLAC 16/44.1), 7 (FLAC 24/96),
   /// 27 (FLAC 24/192). Default 6.
   pub qobuz_quality: u8,
@@ -1340,6 +1450,9 @@ impl UserConfig {
         subsonic_username: None,
         subsonic_password: None,
         ytdlp_path: None,
+        playback_engine: PlaybackEngine::Librespot,
+        soloist_path: None,
+        soloist_audio_quality: SoloistQuality::Lossless,
         qobuz_quality: QOBUZ_QUALITY_DEFAULT,
         radio_stations: Vec::new(),
         // --- Phase 2: icons / glyphs / labels (defaults = today's glyphs) ---
@@ -1954,6 +2067,15 @@ impl UserConfig {
     if let Some(ytdlp_path) = trim_to_none(behavior_config.ytdlp_path) {
       self.behavior.ytdlp_path = Some(ytdlp_path);
     }
+    if let Some(playback_engine) = behavior_config.playback_engine {
+      self.behavior.playback_engine = playback_engine;
+    }
+    if let Some(soloist_path) = trim_to_none(behavior_config.soloist_path) {
+      self.behavior.soloist_path = Some(soloist_path);
+    }
+    if let Some(quality) = behavior_config.soloist_audio_quality {
+      self.behavior.soloist_audio_quality = quality;
+    }
     if let Some(qobuz_quality) = behavior_config.qobuz_quality {
       self.behavior.qobuz_quality = qobuz_quality_or_default(qobuz_quality);
     }
@@ -2393,6 +2515,9 @@ impl UserConfig {
       subsonic_username: self.behavior.subsonic_username.clone(),
       subsonic_password: self.behavior.subsonic_password.clone(),
       ytdlp_path: self.behavior.ytdlp_path.clone(),
+      playback_engine: Some(self.behavior.playback_engine),
+      soloist_path: self.behavior.soloist_path.clone(),
+      soloist_audio_quality: Some(self.behavior.soloist_audio_quality),
       qobuz_quality: Some(self.behavior.qobuz_quality),
       radio_stations: if self.behavior.radio_stations.is_empty() {
         None
@@ -3181,6 +3306,19 @@ mod tests {
     // Missing field defaults to None (not overriding the config default)
     let config: BehaviorConfigString = serde_yaml::from_str("{}").unwrap();
     assert_eq!(config.startup_behavior, None);
+  }
+
+  #[test]
+  fn soloist_settings_parse_in_every_build() {
+    use super::{BehaviorConfigString, PlaybackEngine, SoloistQuality};
+
+    let config: BehaviorConfigString = serde_yaml::from_str(
+      "playback_engine: soloist\nsoloist_path: C:/soloist.exe\nsoloist_audio_quality: very_high",
+    )
+    .unwrap();
+    assert_eq!(config.playback_engine, Some(PlaybackEngine::Soloist));
+    assert_eq!(config.soloist_path.as_deref(), Some("C:/soloist.exe"));
+    assert_eq!(config.soloist_audio_quality, Some(SoloistQuality::VeryHigh));
   }
 
   #[test]

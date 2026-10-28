@@ -41,6 +41,10 @@ pub struct PopupStrings {
   pub no_editable_playlists: &'static str,
   pub collaborative_playlist_template: &'static str,
   pub playlist_picker_controls_template: &'static str,
+  pub playlist_picker_search_prompt: &'static str,
+  pub playlist_picker_search_edit_hint: &'static str,
+  pub playlist_picker_search_hint_template: &'static str,
+  pub no_matching_playlists_template: &'static str,
   pub mirror_playlist: &'static str,
   pub selected_playlist: &'static str,
   pub mirror_onto_template: &'static str,
@@ -121,6 +125,19 @@ pub struct PopupStrings {
   pub unknown_artist: &'static str,
   pub create_results_title: &'static str,
   pub added_tracks_title_template: &'static str,
+  pub soloist_pair_title: &'static str,
+  pub soloist_pair_open: &'static str,
+  pub soloist_pair_pick_template: &'static str,
+  pub soloist_pair_waiting: &'static str,
+  pub soloist_pair_close: &'static str,
+  pub soloist_offer_title: &'static str,
+  pub soloist_offer_body: &'static str,
+  pub soloist_offer_step_download: &'static str,
+  pub soloist_offer_step_key: &'static str,
+  pub soloist_offer_step_engine: &'static str,
+  pub soloist_offer_set_up: &'static str,
+  pub soloist_offer_not_now: &'static str,
+  pub soloist_offer_controls: &'static str,
 }
 
 pub const EN: PopupStrings = PopupStrings {
@@ -162,6 +179,10 @@ pub const EN: PopupStrings = PopupStrings {
   no_editable_playlists: "No editable playlists available",
   collaborative_playlist_template: "{name} - {owner} (collab)",
   playlist_picker_controls_template: "Enter add/open | q cancel | {down}/{up} or arrows move | H/M/L jump",
+  playlist_picker_search_prompt: "Search: ",
+  playlist_picker_search_edit_hint: "  Enter: apply  Esc: clear",
+  playlist_picker_search_hint_template: "{key} search playlists",
+  no_matching_playlists_template: "No playlists match \"{query}\"",
   mirror_playlist: "Mirror Playlist",
   selected_playlist: "Selected playlist",
   mirror_onto_template: "Mirror \"{name}\" onto:",
@@ -242,6 +263,19 @@ pub const EN: PopupStrings = PopupStrings {
   unknown_artist: "Unknown",
   create_results_title: "Results (Enter to add)",
   added_tracks_title_template: "Added ({count}) — d=remove, Enter=create",
+  soloist_pair_title: "Pair spotatui with Spotify",
+  soloist_pair_open: "1. Open Spotify on a computer on this network.",
+  soloist_pair_pick_template: "2. In its device menu, pick '{name}'.",
+  soloist_pair_waiting: "Waiting for Spotify…",
+  soloist_pair_close: "Close",
+  soloist_offer_title: "Play through Soloist?",
+  soloist_offer_body: "Spotify refuses librespot the audio keys for these tracks, as it does for some accounts. Soloist, Spotify's own player, can play them. It needs Premium. In Settings:",
+  soloist_offer_step_download: "1. Soloist Path: Download from Spotify.",
+  soloist_offer_step_key: "2. Soloist API Key: Get a key, then enter it.",
+  soloist_offer_step_engine: "3. Playback Engine: Soloist.",
+  soloist_offer_set_up: "Set up Soloist",
+  soloist_offer_not_now: "Not now",
+  soloist_offer_controls: "Enter: open Settings   Esc: not now",
 };
 
 // Keep ..EN so new English fields compile before their translations are added.
@@ -286,6 +320,10 @@ pub const ZH_HANS: PopupStrings = PopupStrings {
   collaborative_playlist_template: "{name} - {owner}（协作）",
   playlist_picker_controls_template:
     "Enter 添加/打开 | q 取消 | {down}/{up} 或方向键移动 | H/M/L 跳转",
+  playlist_picker_search_prompt: "搜索：",
+  playlist_picker_search_edit_hint: "  Enter：应用  Esc：清除",
+  playlist_picker_search_hint_template: "{key} 搜索播放列表",
+  no_matching_playlists_template: "没有匹配“{query}”的播放列表",
   mirror_playlist: "镜像播放列表",
   selected_playlist: "所选播放列表",
   mirror_onto_template: "将“{name}”镜像到：",
@@ -411,6 +449,10 @@ pub const ZH_HANT: PopupStrings = PopupStrings {
   collaborative_playlist_template: "{name} - {owner}（協作）",
   playlist_picker_controls_template:
     "Enter 加入/開啟 | q 取消 | {down}/{up} 或方向鍵移動 | H/M/L 跳轉",
+  playlist_picker_search_prompt: "搜尋：",
+  playlist_picker_search_edit_hint: "  Enter：套用  Esc：清除",
+  playlist_picker_search_hint_template: "{key} 搜尋播放清單",
+  no_matching_playlists_template: "沒有符合「{query}」的播放清單",
   mirror_playlist: "鏡像播放清單",
   selected_playlist: "所選播放清單",
   mirror_onto_template: "將「{name}」鏡像到：",
@@ -494,6 +536,13 @@ pub const ZH_HANT: PopupStrings = PopupStrings {
   ..EN
 };
 
+#[cfg(any(feature = "tui", feature = "gui", test))]
+impl PopupStrings {
+  pub fn soloist_pair_pick(&self, name: &str) -> String {
+    super::format_template(self.soloist_pair_pick_template, &[("name", name)])
+  }
+}
+
 #[cfg(any(feature = "tui", test))]
 impl PopupStrings {
   #[cfg(any(feature = "internet-radio", test))]
@@ -537,6 +586,14 @@ impl PopupStrings {
       self.playlist_picker_controls_template,
       &[("down", down), ("up", up)],
     )
+  }
+
+  pub fn playlist_picker_search_hint(&self, key: &str) -> String {
+    super::format_template(self.playlist_picker_search_hint_template, &[("key", key)])
+  }
+
+  pub fn no_matching_playlists(&self, query: &str) -> String {
+    super::format_template(self.no_matching_playlists_template, &[("query", query)])
   }
 
   pub fn mirror_onto(&self, name: &str) -> String {

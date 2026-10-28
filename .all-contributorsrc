@@ -612,6 +612,97 @@
       "contributions": [
         "platform"
       ]
+    },
+    {
+      "login": "OpenR00t",
+      "name": "OpenR00t",
+      "avatar_url": "https://avatars.githubusercontent.com/u/17520570?v=4",
+      "profile": "https://github.com/OpenR00t",
+      "contributions": [
+        "code",
+        "design"
+      ]
+    },
+    {
+      "login": "mvanhorn",
+      "name": "Matt Van Horn",
+      "avatar_url": "https://avatars.githubusercontent.com/u/455140?v=4",
+      "profile": "https://github.com/mvanhorn",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "devtechedge",
+      "name": "Dev M",
+      "avatar_url": "https://avatars.githubusercontent.com/u/294291171?v=4",
+      "profile": "https://github.com/devtechedge",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "montionugera",
+      "name": "Pasit Nusso",
+      "avatar_url": "https://avatars.githubusercontent.com/u/5601426?v=4",
+      "profile": "https://github.com/montionugera",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "psymariux",
+      "name": "PsyMariux",
+      "avatar_url": "https://avatars.githubusercontent.com/u/238106931?v=4",
+      "profile": "https://github.com/psymariux",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "uznog",
+      "name": "Konrad Baran",
+      "avatar_url": "https://avatars.githubusercontent.com/u/65494005?v=4",
+      "profile": "https://github.com/uznog",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "zaydmulani09",
+      "name": "zayd",
+      "avatar_url": "https://avatars.githubusercontent.com/u/257340907?v=4",
+      "profile": "https://github.com/zaydmulani09",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "BartholomewJr",
+      "name": "BartholomewJr",
+      "avatar_url": "https://avatars.githubusercontent.com/u/348017353?v=4",
+      "profile": "https://github.com/BartholomewJr",
+      "contributions": [
+        "financial"
+      ]
+    },
+    {
+      "login": "JosephAnderson234",
+      "name": "Yiuseppe24",
+      "avatar_url": "https://avatars.githubusercontent.com/u/83091452?v=4",
+      "profile": "https://my-portafolio-plum.vercel.app/",
+      "contributions": [
+        "code"
+      ]
+    },
+    {
+      "login": "deauthe",
+      "name": "anurag verma",
+      "avatar_url": "https://avatars.githubusercontent.com/u/62888566?v=4",
+      "profile": "http://www.anuragx.in",
+      "contributions": [
+        "code"
+      ]
     }
   ],
   "contributorsPerLine": 7,

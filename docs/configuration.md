@@ -78,7 +78,7 @@ behavior:
 
 ## Native streaming
 
-Builds with the `streaming` feature play Spotify themselves as a Connect device. These fields also appear in Settings; a change takes effect after a restart.
+Builds with the `streaming` feature play Spotify themselves as a Connect device. These fields also appear in Settings; a change takes effect after a restart, except `playback_engine`, which switches at once while `enable_streaming` is on.
 
 ```yaml
 behavior:
@@ -87,7 +87,12 @@ behavior:
   streaming_bitrate: 320           # 96, 160, or 320 kbps
   streaming_audio_cache: false     # keep played audio in the streaming cache
   streaming_autoplay: true         # enable Spotify's related-songs autoplay
+  playback_engine: librespot       # or soloist: Spotify's own player (feature `soloist`)
+  soloist_path: /path/to/soloist   # the Soloist program; Settings can download it
+  soloist_audio_quality: lossless  # normal, high, very_high or lossless
 ```
+
+The Soloist API key is in `soloist_credentials.yml` next to `config.yml` (`api_key: ...`), or in `SPOTATUI_SOLOIST_API_KEY`. The setup is in [Soloist](soloist.md).
 ## Cover art dithering
 
 Build with `--features cover-art` to show the cover-art settings. Dithering is off by default and does not turn on cover art where terminal support has disabled it; `draw_cover_art_forced` still controls the basic-terminal fallback.
@@ -260,7 +265,7 @@ The card shows cover art, title, artist, a progress bar and an animated equalize
 
 ## Audio visualizer
 
-Press `v` for the visualizer and `V` to switch between Cava, Bar Graph and Spotify Pitch. Cava and Bar Graph analyse your system audio in real time, so they also react to videos, games and any other sound:
+Press `v` for the visualizer and `V` to switch between Cava, Bar Graph, Head Unit, Analog VU, Winamp, Phosphor Scope, Outrun, Rack EQ, Cassette Deck and Spotify Pitch. All but Spotify Pitch analyse your system audio in real time, so they also react to videos, games and any other sound:
 
 | Platform | Setup |
 |---|---|
@@ -308,7 +313,7 @@ These keys also go under `behavior:`. Defaults below are the built-in values whe
 | `enable_lyrics` | `true` | Look up lyrics for each track. Spotify tracks try Spotify first, then fall back to LRCLIB if lyrics are unavailable or the request fails; LRCLIB receives the title, artist and length. |
 | `enable_monthly_recap_prompt` | `true` | Show a popup once a month when your listening recap is ready. |
 | `pin_community_playlist` | `true` | Pin the spotatui community playlist to the top of your Spotify playlists. |
-| `visualizer_style` | `Cava` | Visualizer look: `Cava` or `BarGraph` (case-sensitive). Older `Classic` and `Equalizer` values are accepted as aliases for `Cava`. |
+| `visualizer_style` | `Cava` | Visualizer look: `Cava`, `BarGraph`, `HeadUnit`, `AnalogVu`, `Winamp`, `PhosphorScope`, `Outrun`, `RackEq` or `Cassette` (case-sensitive). Older `Classic` and `Equalizer` values are accepted as aliases for `Cava`. |
 | `stop_after_current_track` | `false` | Pause native Spotify streaming when the current track finishes; does not apply to other sources or remote Connect devices. |
 | `draw_cover_art` | `true` | Enable rendering song/episode cover art; needs a cover-art build. |
 | `cover_art_theme` | `false` | Recolor UI accents from the current cover art, fading on track change. Requires `art-decode`, which `cover-art` includes. |

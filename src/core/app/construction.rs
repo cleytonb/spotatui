@@ -151,11 +151,13 @@ impl Default for App {
       #[cfg(feature = "streaming")]
       native_shuffle_generation: 0,
       #[cfg(not(target_os = "android"))]
-      keepawake: None,
+      keepawake: Default::default(),
       last_device_activation: None,
       native_activation_pending: false,
       #[cfg(feature = "streaming")]
       native_handed_off: false,
+      #[cfg(feature = "streaming")]
+      native_unavailable_halt: false,
       #[cfg(feature = "streaming")]
       native_handoff_resume_tried: false,
       // Sort menu defaults
@@ -194,6 +196,16 @@ impl Default for App {
       last_dispatched_volume: None,
       #[cfg(feature = "streaming")]
       streaming_player: None,
+      #[cfg(feature = "soloist")]
+      soloist_link: None,
+      #[cfg(feature = "soloist")]
+      soloist_downloading: false,
+      #[cfg(feature = "soloist")]
+      librespot_standby: None,
+      soloist_pairing: false,
+      soloist_offer: false,
+      #[cfg(feature = "soloist")]
+      soloist_offered: false,
       decoded_repeat: RepeatMode::Off,
       decoded_shuffle: false,
       #[cfg(feature = "local-files")]
