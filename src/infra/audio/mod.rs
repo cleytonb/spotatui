@@ -76,7 +76,7 @@ pub use pipewire_capture::PipeWireCapture as AudioCaptureManager;
   feature = "audio-viz-cpal",
   not(all(feature = "audio-viz", target_os = "linux"))
 ))]
-pub use capture::AudioCaptureManager;
+pub use capture::{input_device_names, AudioCaptureManager};
 
 // Re-export SpectrumData
 #[cfg(any(feature = "audio-viz", feature = "audio-viz-cpal"))]
@@ -109,7 +109,7 @@ pub struct AudioCaptureManager;
 )))]
 #[allow(dead_code)]
 impl AudioCaptureManager {
-  pub fn new(_display_bars: usize) -> Option<Self> {
+  pub fn new(_display_bars: usize, _device_hint: Option<&str>) -> Option<Self> {
     None
   }
 

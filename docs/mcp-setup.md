@@ -190,6 +190,7 @@ a plugin's tools carry its name too):
 | `get_listening_history` | Aggregate taste summary: top artists, tracks, albums, recent plays |
 | `get_now_playing` | Current track, play state, queue depth |
 | `get_queue` | Upcoming tracks |
+| `get_lyrics` | Lyrics of the current track |
 | `search_tracks` | Find tracks and their URIs, each marked `owned` or `new` |
 | `queue_tracks` | Add tracks by URI, or by title + artist; `exclude_owned` skips ones they already have |
 | `play_now` | Start a track immediately |

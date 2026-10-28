@@ -852,8 +852,9 @@ impl Driver {
         };
         // A frontend that reads samples retries a failed capture by itself, quietly.
         let report = matches!(need, VizNeed::Bars(_));
+        let device_hint = app.user_config.behavior.visualizer_input_device.clone();
         let capture = self.audio_capture.poll(app, report, move || {
-          audio::AudioCaptureManager::new(desired_bars)
+          audio::AudioCaptureManager::new(desired_bars, device_hint.as_deref())
         });
         match capture {
           Some(capture) => {

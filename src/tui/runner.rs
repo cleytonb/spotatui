@@ -493,13 +493,16 @@ pub async fn start_ui(
   crate::tui::cover_art::init_renderer();
   execute!(stdout(), EnableMouseCapture)?;
   let keyboard_enhancement_supported = supports_keyboard_enhancement().unwrap_or(false);
+  // No REPORT_ALL_KEYS_AS_ESCAPE_CODES: it stops the terminal sending text, and
+  // crossterm cannot read the associated-text field that carries it, so a dead-key
+  // accent ("´" then "a") arrived as a bare "a". DISAMBIGUATE alone still reports
+  // Ctrl/Alt chords (Ctrl+,) as CSI u and leaves composed text as plain UTF-8.
   let keyboard_enhancement_enabled = keyboard_enhancement_supported
     && execute!(
       stdout(),
       PushKeyboardEnhancementFlags(
         KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
           | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-          | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
       )
     )
     .is_ok();

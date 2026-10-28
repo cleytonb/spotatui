@@ -14,6 +14,8 @@ pub struct SettingsStrings {
   pub behavior_ytdlp_path_name: &'static str,
   pub behavior_local_music_path_description: &'static str,
   pub behavior_local_music_path_name: &'static str,
+  pub behavior_visualizer_input_device_description: &'static str,
+  pub behavior_visualizer_input_device_name: &'static str,
   pub behavior_subsonic_password_description: &'static str,
   pub behavior_subsonic_password_name: &'static str,
   pub behavior_subsonic_username_description: &'static str,
@@ -320,6 +322,7 @@ pub struct SettingsStrings {
   pub option_album_list: &'static str,
   pub option_stats: &'static str,
   pub option_default: &'static str,
+  pub option_system_default: &'static str,
   pub option_name: &'static str,
   pub option_name_desc: &'static str,
   pub option_date_added: &'static str,
@@ -378,6 +381,10 @@ impl SettingsStrings {
       "behavior.ytdlp_path" => (
         self.behavior_ytdlp_path_name,
         self.behavior_ytdlp_path_description,
+      ),
+      "behavior.visualizer_input_device" => (
+        self.behavior_visualizer_input_device_name,
+        self.behavior_visualizer_input_device_description,
       ),
       "behavior.local_music_path" => (
         self.behavior_local_music_path_name,
@@ -824,6 +831,9 @@ impl SettingsStrings {
       ("behavior.startup_behavior", "Play") => self.option_play,
       ("behavior.startup_behavior", "Pause") => self.option_pause,
       ("behavior.startup_route", "home") => self.option_home,
+      ("behavior.visualizer_input_device", crate::core::app::SYSTEM_DEFAULT_DEVICE) => {
+        self.option_system_default
+      }
       ("behavior.startup_route", "recently_played") => self.option_recently_played,
       ("behavior.startup_route", "podcasts") => self.option_podcasts,
       ("behavior.startup_route", "discover") => self.option_discover,

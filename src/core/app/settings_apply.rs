@@ -381,6 +381,12 @@ impl App {
             self.user_config.behavior.subsonic_password = trimmed(v);
           }
         }
+        "behavior.visualizer_input_device" => {
+          if let SettingValue::Cycle(v, _) = &setting.value {
+            self.user_config.behavior.visualizer_input_device =
+              (v != super::settings_schema::SYSTEM_DEFAULT_DEVICE).then(|| v.clone());
+          }
+        }
         #[cfg(feature = "local-files")]
         "behavior.local_music_path" => {
           if let SettingValue::String(v) = &setting.value {

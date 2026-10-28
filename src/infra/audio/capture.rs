@@ -8,6 +8,36 @@ use cpal::{Device, Stream, StreamConfig};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// Names of the devices the visualizer can listen to, sorted and de-duplicated.
+/// Windows loopback captures an output device, so those are listed there too.
+/// An enumeration failure is an empty list: the setting then offers only the default.
+pub fn input_device_names() -> Vec<String> {
+  let host = cpal::default_host();
+  let name_of = |device: Device| {
+    device
+      .description()
+      .ok()
+      .map(|description| description.name().to_string())
+  };
+  let mut names: Vec<String> = host
+    .input_devices()
+    .into_iter()
+    .flatten()
+    .filter_map(name_of)
+    .collect();
+  #[cfg(target_os = "windows")]
+  names.extend(
+    host
+      .output_devices()
+      .into_iter()
+      .flatten()
+      .filter_map(name_of),
+  );
+  names.sort();
+  names.dedup();
+  names
+}
+
 /// Manages audio capture from system output (loopback)
 pub struct AudioCaptureManager {
   _stream: Stream,
@@ -18,11 +48,12 @@ pub struct AudioCaptureManager {
 impl AudioCaptureManager {
   /// Create a new audio capture manager sized for `display_bars`
   /// Returns None if no suitable audio device is found
-  pub fn new(display_bars: usize) -> Option<Self> {
+  pub fn new(display_bars: usize, device_hint: Option<&str>) -> Option<Self> {
     let host = cpal::default_host();
 
     // Try to find a loopback/monitor device
-    let device = Self::find_loopback_device(&host)?;
+    let device =
+      Self::find_named_device(&host, device_hint).or_else(|| Self::find_loopback_device(&host))?;
 
     // Device name is now stored internally for debugging if needed
     let _device_name = device
@@ -72,6 +103,40 @@ impl AudioCaptureManager {
   /// Check if audio capture is currently active
   pub fn is_active(&self) -> bool {
     self.active.load(Ordering::Relaxed)
+  }
+
+  /// The device the user named in `behavior.visualizer_input_device`: the first
+  /// whose name contains `hint`, case-insensitively. Windows loopback captures an
+  /// output device, so those are searched there too. `None` falls back to the
+  /// platform pick, so a stale name degrades to the old behaviour instead of silence.
+  fn find_named_device(host: &cpal::Host, hint: Option<&str>) -> Option<Device> {
+    let hint = hint?.trim().to_lowercase();
+    if hint.is_empty() {
+      return None;
+    }
+    let matches = |device: &Device| {
+      device
+        .description()
+        .map(|description| description.name().to_lowercase().contains(&hint))
+        .unwrap_or(false)
+    };
+    let input = host
+      .input_devices()
+      .ok()
+      .and_then(|mut devices| devices.find(|d| matches(d)));
+    #[cfg(target_os = "windows")]
+    {
+      input.or_else(|| {
+        host
+          .output_devices()
+          .ok()
+          .and_then(|mut devices| devices.find(|d| matches(d)))
+      })
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+      input
+    }
   }
 
   /// Find a suitable loopback/monitor device

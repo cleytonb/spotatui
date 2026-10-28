@@ -33,7 +33,8 @@ type Ready = Box<dyn FnOnce() + Send>;
 impl PipeWireCapture {
   /// Create a new PipeWire audio capture manager sized for `display_bars`
   /// Returns None if PipeWire initialization fails
-  pub fn new(display_bars: usize) -> Option<Self> {
+  /// PipeWire picks its own monitor target, so the configured device name is not used here.
+  pub fn new(display_bars: usize, _device_hint: Option<&str>) -> Option<Self> {
     // Built at the rate we request below; the param_changed callback swaps in
     // the rate PipeWire actually negotiates.
     let analyzer = create_shared_analyzer(48000, display_bars);

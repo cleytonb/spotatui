@@ -317,6 +317,7 @@ These keys also go under `behavior:`. Defaults below are the built-in values whe
 | `enable_global_song_count` | `true` | Contribute to the anonymous worldwide song counter: an increment after 30 seconds of playback (half the duration for tracks shorter than a minute), or every 2.5 minutes of radio; no personal info, song names or history. Requires `telemetry`. |
 | `enable_discord_rpc` | `true` | Show your current track in Discord. Requires `discord-rpc`. |
 | `discord_rpc_client_id` | Unset | Override the built-in Discord application ID with a string. Requires `discord-rpc`. |
+| `visualizer_input_device` | Unset | Name (or part of it, case-insensitive) of the audio device the visualizer captures, e.g. `BlackHole`. Unset picks the system default, which on macOS is the microphone: point this at a loopback device to visualize system audio. The Settings screen lists the devices to choose from. Used by the cpal capture backend (macOS, Windows, and Linux without PipeWire). |
 | `startup_behavior` | `continue` | Playback state at launch: `continue` preserves Spotify's state and resumes a saved non-Spotify session as it was; `play` always starts; `pause` always pauses. |
 | `disable_auto_update` | `false` | Skip the automatic update check on startup; use `spotatui update` to update manually. Requires `self-update`. |
 

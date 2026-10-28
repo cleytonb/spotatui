@@ -1,5 +1,49 @@
 use super::*;
 
+/// The "no device chosen" choice of `behavior.visualizer_input_device`; it is stored as unset.
+pub(crate) const SYSTEM_DEFAULT_DEVICE: &str = "System default";
+
+/// The choices for `behavior.visualizer_input_device`: the system default, then every device
+/// found right now, then the configured name when it is not one of them (a part of a name, or
+/// a device that is unplugged) so saving the screen never rewrites a value the user did not touch.
+/// `SettingValue::Cycle` borrows its options for `'static`, so each distinct list is leaked
+/// once and reused: the cost is bounded by how often the set of devices actually changes.
+#[cfg(all(
+  feature = "audio-viz-cpal",
+  not(all(feature = "audio-viz", target_os = "linux"))
+))]
+fn visualizer_device_options(configured: Option<&str>) -> &'static [&'static str] {
+  use std::collections::HashMap;
+  use std::sync::{Mutex, OnceLock};
+  static INTERNED: OnceLock<Mutex<HashMap<Vec<String>, &'static [&'static str]>>> = OnceLock::new();
+
+  let mut names = crate::infra::audio::input_device_names();
+  if let Some(configured) = configured {
+    if !names.iter().any(|name| name == configured) {
+      names.push(configured.to_string());
+    }
+  }
+  let mut cache = INTERNED
+    .get_or_init(Default::default)
+    .lock()
+    .unwrap_or_else(|poisoned| poisoned.into_inner());
+  if let Some(options) = cache.get(&names) {
+    return options;
+  }
+  let options: &'static [&'static str] = Box::leak(
+    std::iter::once(SYSTEM_DEFAULT_DEVICE)
+      .chain(
+        names
+          .iter()
+          .map(|name| &*Box::leak(name.clone().into_boxed_str())),
+      )
+      .collect::<Vec<&'static str>>()
+      .into_boxed_slice(),
+  );
+  cache.insert(names, options);
+  options
+}
+
 /// Settings screen category tabs
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub enum SettingsCategory {
@@ -513,6 +557,25 @@ impl App {
             .to_string(),
           crate::core::user_config::PlayerBarVisualizer::options(),
         ),
+      },
+      // Only the cpal backend reads it; PipeWire picks its own monitor.
+      #[cfg(all(
+        feature = "audio-viz-cpal",
+        not(all(feature = "audio-viz", target_os = "linux"))
+      ))]
+      SettingItem {
+        id: "behavior.visualizer_input_device".to_string(),
+        name: strings.behavior_visualizer_input_device_name.to_string(),
+        description: strings
+          .behavior_visualizer_input_device_description
+          .to_string(),
+        value: {
+          let configured = self.user_config.behavior.visualizer_input_device.as_deref();
+          SettingValue::Cycle(
+            configured.unwrap_or(SYSTEM_DEFAULT_DEVICE).to_string(),
+            visualizer_device_options(configured),
+          )
+        },
       },
       SettingItem {
         id: "behavior.startup_route".to_string(),
@@ -1311,6 +1374,50 @@ mod tests {
       language.value,
       SettingValue::Cycle("zh-Hant".to_string(), Language::OPTIONS)
     );
+  }
+
+  #[cfg(all(
+    feature = "audio-viz-cpal",
+    not(all(feature = "audio-viz", target_os = "linux"))
+  ))]
+  #[test]
+  fn visualizer_device_choice_is_stored_by_name_and_system_default_clears_it() {
+    let mut app = App::default();
+    app.load_settings_for_category();
+    let pick = |app: &mut App, choice: &str| {
+      let row = app
+        .settings_items
+        .iter_mut()
+        .find(|item| item.id == "behavior.visualizer_input_device")
+        .unwrap();
+      let SettingValue::Cycle(value, _) = &mut row.value else {
+        panic!("the device row is a choice");
+      };
+      *value = choice.to_string();
+      app.apply_settings_changes();
+    };
+
+    pick(&mut app, "BlackHole 2ch");
+    assert_eq!(
+      app.user_config.behavior.visualizer_input_device.as_deref(),
+      Some("BlackHole 2ch")
+    );
+
+    app.load_settings_for_category();
+    let row = app
+      .settings_items
+      .iter()
+      .find(|item| item.id == "behavior.visualizer_input_device")
+      .unwrap();
+    let SettingValue::Cycle(value, options) = &row.value else {
+      panic!("the device row is a choice");
+    };
+    assert_eq!(value, "BlackHole 2ch");
+    assert_eq!(options[0], SYSTEM_DEFAULT_DEVICE);
+    assert!(options.contains(&"BlackHole 2ch"));
+
+    pick(&mut app, SYSTEM_DEFAULT_DEVICE);
+    assert_eq!(app.user_config.behavior.visualizer_input_device, None);
   }
 
   #[test]

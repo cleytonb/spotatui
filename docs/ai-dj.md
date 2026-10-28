@@ -93,6 +93,11 @@ at all, which is [why some installs never see it](#it-never-asked-me).
 
 All five are rebindable, see [`docs/keybindings.md`](keybindings.md).
 
+To wipe the conversation, type `/clear` and press <kbd>Enter</kbd>. It also
+abandons a turn that is still in flight, and since the DJ reads its context from
+the transcript, it starts fresh afterwards. It is a typed command rather than a
+key because the prompt takes every bare character and no modifier key is left.
+
 The DJ is also reachable from the **AI DJ** row in the sidebar, which is offered
 under every source. The global key opens the screen from anywhere without a
 trip through the sidebar.

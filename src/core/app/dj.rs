@@ -1,5 +1,11 @@
 use super::*;
 
+/// Typed into the DJ prompt, wipes the conversation. A typed command rather than
+/// a key because the DJ prompt takes every bare character and the unused modifier
+/// keys are all spoken for (Ctrl+L is the macOS alias for Ctrl+, on some terminals).
+#[cfg(feature = "ai-dj")]
+const CLEAR_COMMAND: &str = "/clear";
+
 impl App {
   /// Dedupe keys for everything the DJ should not queue again: what is already
   /// waiting in the native queue, plus the track playing right now.
@@ -143,11 +149,36 @@ impl App {
     }
   }
 
+  /// Wipe the DJ conversation and abandon any turn in flight.
+  ///
+  /// The brain is stateless and reads its context from the transcript, so this
+  /// also resets what the DJ remembers of the chat. The generation bump is what
+  /// keeps a late answer from the abandoned turn out of the empty transcript,
+  /// and the `turn_seq` bump is what stops that turn from clearing the progress
+  /// flag of whatever starts next.
+  #[cfg(feature = "ai-dj")]
+  pub(crate) fn clear_dj_chat(&mut self) {
+    self.dj.bump_generation();
+    self.dj.turn_seq = self.dj.turn_seq.wrapping_add(1);
+    self.dj.thinking = false;
+    self.dj.step = None;
+    self.dj.transcript.clear();
+    self.dj.scroll = 0;
+    self.dj.clear_input();
+    self.dj.bump_revision();
+  }
+
   /// Ask the DJ for something, in the listener's own words. The input box is
   /// cleared only when the turn starts.
   #[cfg(feature = "ai-dj")]
   pub(crate) fn ask_dj(&mut self, text: String) {
     use crate::infra::dj::{AskDjRequest, DjLine, TurnKind};
+    // Ahead of the busy check: clearing is how a listener abandons a turn that is
+    // taking too long, so it has to work while one is in flight.
+    if text.trim() == CLEAR_COMMAND {
+      self.clear_dj_chat();
+      return;
+    }
     // Checked before the trim so a blank ask during a turn still reports busy.
     if self.dj.thinking {
       self.set_status_message(self.strings().status.app.dj_previous_request, 3);
@@ -398,5 +429,47 @@ mod tests {
     assert_eq!(app.drop_dj_queued_tracks(), 1, "only the remaining DJ pick");
     assert_eq!(app.native_queue.len(), 1);
     assert_eq!(app.native_queue[0].name, "My Track");
+  }
+
+  #[cfg(feature = "ai-dj")]
+  #[test]
+  fn typing_clear_wipes_the_chat_and_abandons_the_turn_in_flight() {
+    use crate::infra::dj::{DjLine, TurnKind};
+    let (tx, rx) = channel();
+    let mut app = App::new(tx, UserConfig::new(), Some(SystemTime::now()));
+    app.dj.push_line(DjLine::user("hello".to_string()));
+    app.dj.scroll = 7;
+    let generation = app.dj.generation;
+    let seq = app.dj.begin_turn(TurnKind::Ask);
+
+    app.ask_dj("  /clear ".to_string());
+
+    assert!(app.dj.transcript.is_empty());
+    assert_eq!(app.dj.scroll, 0);
+    assert!(!app.dj.thinking, "a cleared chat is not still thinking");
+    assert_ne!(
+      app.dj.generation, generation,
+      "late results must be dropped"
+    );
+    // The abandoned turn finishing must not clear a flag it no longer owns.
+    app.dj.begin_turn(TurnKind::Ask);
+    app.dj.finish_turn(seq);
+    assert!(app.dj.thinking);
+    assert!(
+      rx.try_recv().is_err(),
+      "/clear must not ask the brain anything"
+    );
+  }
+
+  #[cfg(feature = "ai-dj")]
+  #[test]
+  fn clear_is_only_a_command_when_it_is_the_whole_message() {
+    let (tx, rx) = channel();
+    let mut app = App::new(tx, UserConfig::new(), Some(SystemTime::now()));
+
+    app.ask_dj("please /clear my doubts".to_string());
+
+    assert_eq!(app.dj.transcript.len(), 1, "an ordinary ask keeps the chat");
+    assert!(rx.try_recv().is_ok(), "an ordinary ask reaches the brain");
   }
 }

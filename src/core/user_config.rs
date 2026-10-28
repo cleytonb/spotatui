@@ -597,6 +597,7 @@ pub struct BehaviorConfigString {
   pub disable_mouse_inputs: Option<bool>,
   pub enable_discord_rpc: Option<bool>,
   pub discord_rpc_client_id: Option<String>,
+  pub visualizer_input_device: Option<String>,
   pub enable_announcements: Option<bool>,
   pub enable_lyrics: Option<bool>,
   pub announcement_feed_url: Option<String>,
@@ -726,6 +727,7 @@ pub struct BehaviorConfig {
   pub disable_mouse_inputs: bool,
   pub enable_discord_rpc: bool,
   pub discord_rpc_client_id: Option<String>,
+  pub visualizer_input_device: Option<String>,
   pub enable_announcements: bool,
   pub enable_lyrics: bool,
   pub announcement_feed_url: Option<String>,
@@ -1261,6 +1263,7 @@ impl UserConfig {
         disable_mouse_inputs: false,
         enable_discord_rpc: true,
         discord_rpc_client_id: None,
+        visualizer_input_device: None,
         enable_announcements: true,
         enable_lyrics: true,
         announcement_feed_url: None,
@@ -1713,6 +1716,10 @@ impl UserConfig {
 
     if let Some(discord_rpc_client_id) = behavior_config.discord_rpc_client_id {
       self.behavior.discord_rpc_client_id = Some(discord_rpc_client_id);
+    }
+
+    if let Some(visualizer_input_device) = behavior_config.visualizer_input_device {
+      self.behavior.visualizer_input_device = Some(visualizer_input_device);
     }
 
     if let Some(visualizer_style) = behavior_config.visualizer_style {
@@ -2365,6 +2372,7 @@ impl UserConfig {
       disable_mouse_inputs: Some(self.behavior.disable_mouse_inputs),
       enable_discord_rpc: Some(self.behavior.enable_discord_rpc),
       discord_rpc_client_id: self.behavior.discord_rpc_client_id.clone(),
+      visualizer_input_device: self.behavior.visualizer_input_device.clone(),
       enable_announcements: Some(self.behavior.enable_announcements),
       enable_lyrics: Some(self.behavior.enable_lyrics),
       announcement_feed_url: self.behavior.announcement_feed_url.clone(),

@@ -106,6 +106,16 @@ pub const TOOLS: &[ToolSpec] = &[
     schema: || json!({"type": "object", "additionalProperties": false}),
   },
   ToolSpec {
+    name: "get_lyrics",
+    title: "Lyrics",
+    description: "The lyrics of the currently playing track, as plain text. Use this to answer what a song is about or to quote a line. Answers that the lyrics are still loading, or that none were found, instead of guessing.",
+    read_only: true,
+    needs_network: false,
+    dj: true,
+    destructive: false,
+    schema: || json!({"type": "object", "additionalProperties": false}),
+  },
+  ToolSpec {
     name: "search_tracks",
     title: "Search tracks",
     description: "Search the catalogue for tracks and return their playable URIs. Use this to check that something exists before queueing it by name. Each result is marked `owned` when the user already has it (Liked Songs, or a playlist they own or collaborate on) — prefer results marked new when they asked for something they have not heard.",
@@ -406,6 +416,7 @@ pub enum DjToolCall {
   },
   GetNowPlaying,
   GetQueue,
+  GetLyrics,
   SearchTracks {
     query: String,
     limit: usize,
@@ -619,6 +630,7 @@ pub fn parse_call(name: &str, args: &Value) -> Result<DjToolCall, ToolCallError>
     }
     "get_now_playing" => Ok(DjToolCall::GetNowPlaying),
     "get_queue" => Ok(DjToolCall::GetQueue),
+    "get_lyrics" => Ok(DjToolCall::GetLyrics),
     "search_tracks" => {
       let query = get("query")
         .and_then(Value::as_str)
@@ -859,6 +871,7 @@ impl DjToolCall {
       Self::GetListeningHistory { .. }
       | Self::GetNowPlaying
       | Self::GetQueue
+      | Self::GetLyrics
       | Self::SkipTrack
       | Self::SetDjVibe { .. }
       | Self::ListPlaylists
@@ -874,6 +887,7 @@ impl DjToolCall {
       Self::GetListeningHistory { .. } => "get_listening_history",
       Self::GetNowPlaying => "get_now_playing",
       Self::GetQueue => "get_queue",
+      Self::GetLyrics => "get_lyrics",
       Self::SearchTracks { .. } => "search_tracks",
       Self::QueueTracks { .. } => "queue_tracks",
       Self::PlayNow { .. } => "play_now",
@@ -912,6 +926,7 @@ pub async fn execute_app_only(app: &Arc<Mutex<App>>, call: &DjToolCall) -> Optio
     DjToolCall::GetListeningHistory { period } => Some(history_outcome(app, *period).await),
     DjToolCall::GetNowPlaying => Some(now_playing_outcome(app).await),
     DjToolCall::GetQueue => Some(queue_outcome(app).await),
+    DjToolCall::GetLyrics => Some(lyrics_outcome(app).await),
     DjToolCall::SkipTrack => {
       let mut app = app.lock().await;
       // Through the shared vocabulary, so `App::next_track`'s ownership routing
@@ -1239,6 +1254,53 @@ async fn now_playing_outcome(app: &Arc<Mutex<App>>) -> ToolOutcome {
         "queue_depth": queue_depth,
       }),
     ),
+  }
+}
+
+/// Longest lyrics text handed to a model, in characters. A long song would
+/// otherwise cost more context than it is worth for answering one question.
+const LYRICS_MAX_CHARS: usize = 12000;
+
+async fn lyrics_outcome(app: &Arc<Mutex<App>>) -> ToolOutcome {
+  use crate::core::app::LyricsStatus;
+
+  let app = app.lock().await;
+  if !app.user_config.behavior.enable_lyrics {
+    return ToolOutcome::error("Lyrics are turned off in the user's settings.");
+  }
+  match app.lyrics_status() {
+    LyricsStatus::Found => {
+      let text = lyrics_text(app.lyrics().unwrap_or_default());
+      ToolOutcome::with_data(text.clone(), json!({"lyrics": text}))
+    }
+    LyricsStatus::NotStarted | LyricsStatus::Loading => {
+      ToolOutcome::error("The lyrics are still loading. Try again in a moment.")
+    }
+    LyricsStatus::NotFound => ToolOutcome::error("No lyrics were found for the current track."),
+  }
+}
+
+/// Plain text of a lyrics list: no timestamps, no instrumental markers,
+/// blank lines collapsed, cut at [`LYRICS_MAX_CHARS`].
+fn lyrics_text(lines: &[(u128, String)]) -> String {
+  let mut text = String::new();
+  let mut last_blank = true;
+  for (_, line) in lines {
+    let line = line.trim();
+    let blank = line.is_empty() || line == "♪";
+    if blank && last_blank {
+      continue;
+    }
+    last_blank = blank;
+    if !blank {
+      text.push_str(line);
+    }
+    text.push('\n');
+  }
+  let text = text.trim_end();
+  match text.char_indices().nth(LYRICS_MAX_CHARS) {
+    Some((cut, _)) => format!("{}\n[…cut]", &text[..cut]),
+    None => text.to_string(),
   }
 }
 
@@ -1571,6 +1633,53 @@ mod tests {
     assert!(parse_call("queue_tracks", &json!({"tracks": too_many})).is_err());
   }
 
+  #[test]
+  fn lyrics_text_drops_timestamps_markers_and_repeated_blanks() {
+    let lines = vec![
+      (0, "♪".to_string()),
+      (1000, "first".to_string()),
+      (2000, "".to_string()),
+      (3000, "♪".to_string()),
+      (4000, "second".to_string()),
+    ];
+    assert_eq!(lyrics_text(&lines), "first\n\nsecond");
+  }
+
+  #[test]
+  fn lyrics_text_is_cut_at_the_limit() {
+    let lines = vec![(0, "a".repeat(LYRICS_MAX_CHARS + 50))];
+    let text = lyrics_text(&lines);
+    assert!(text.ends_with("[…cut]"));
+    assert!(text.chars().count() < LYRICS_MAX_CHARS + 10);
+  }
+
+  #[tokio::test]
+  async fn lyrics_answer_found_text_and_say_so_when_there_is_none() {
+    use crate::core::app::LyricsStatus;
+
+    let app = Arc::new(Mutex::new(App::default()));
+    {
+      let mut app = app.lock().await;
+      app.user_config.behavior.enable_lyrics = true;
+      app.set_lyrics(LyricsStatus::NotFound, None, false);
+    }
+    let outcome = execute_app_only(&app, &DjToolCall::GetLyrics)
+      .await
+      .expect("get_lyrics is answered without the network");
+    assert!(outcome.is_error);
+
+    app.lock().await.set_lyrics(
+      LyricsStatus::Found,
+      Some(vec![(0, "hello".to_string())]),
+      false,
+    );
+    let outcome = execute_app_only(&app, &DjToolCall::GetLyrics)
+      .await
+      .unwrap();
+    assert!(!outcome.is_error);
+    assert_eq!(outcome.text, "hello");
+  }
+
   #[tokio::test]
   async fn now_playing_keeps_one_payload_shape_whether_or_not_anything_plays() {
     // A default `App` has no playback context and no native track, so the
@@ -1713,7 +1822,7 @@ mod tests {
   #[test]
   fn the_library_and_device_tools_are_hidden_from_the_dj() {
     let offered: Vec<&str> = dj_tools().map(|tool| tool.name).collect();
-    assert_eq!(offered.len(), 8);
+    assert_eq!(offered.len(), 9);
     assert!(!offered.contains(&"like_tracks"));
     assert_eq!(
       parse_dj_call("like_tracks", &json!({"uris": [TRACK]})),

@@ -1,6 +1,6 @@
 ### The DJ: lanes, guards, and the avoid-library filter
 
-The tool surface is defined once - `src/infra/dj/tools.rs::TOOLS` (18 tools). MCP
+The tool surface is defined once - `src/infra/dj/tools.rs::TOOLS` (19 tools). MCP
 publishes it verbatim; the in-TUI brain renders only the rows with `dj: true`
 (`dj_tools`, `parse_dj_call`): the library, playlist and device tools are
 MCP-only, because an agent there acts on the user's request. Their writes go
