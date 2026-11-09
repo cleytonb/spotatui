@@ -402,6 +402,7 @@ impl SettingsStrings {
       "behavior.visualizer_input_device" => (
         self.behavior_visualizer_input_device_name,
         self.behavior_visualizer_input_device_description,
+      ),
       "behavior.playback_engine" => (
         self.behavior_playback_engine_name,
         self.behavior_playback_engine_description,
