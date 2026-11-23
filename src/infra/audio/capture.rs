@@ -48,21 +48,28 @@ pub struct AudioCaptureManager {
 impl AudioCaptureManager {
   /// Create a new audio capture manager sized for `display_bars`
   /// Returns None if no suitable audio device is found
-  pub fn new(display_bars: usize) -> Option<Self> {
-    Self::open(display_bars, true)
+  /// `device_hint` is `behavior.visualizer_input_device`: when it names a
+  /// device, that one wins over the platform pick.
+  pub fn new(display_bars: usize, device_hint: Option<&str>) -> Option<Self> {
+    Self::open(display_bars, true, device_hint)
   }
 
   /// Like `new`, but on Linux it never falls back to the default input, which
   /// can be a microphone.
   pub fn new_monitor_only(display_bars: usize) -> Option<Self> {
-    Self::open(display_bars, false)
+    Self::open(display_bars, false, None)
   }
 
-  fn open(display_bars: usize, allow_default_input: bool) -> Option<Self> {
+  fn open(
+    display_bars: usize,
+    allow_default_input: bool,
+    device_hint: Option<&str>,
+  ) -> Option<Self> {
     let host = cpal::default_host();
 
-    // Try to find a loopback/monitor device
-    let device = Self::find_loopback_device(&host, allow_default_input)?;
+    // The device the user named, else a loopback/monitor device
+    let device = Self::find_named_device(&host, device_hint)
+      .or_else(|| Self::find_loopback_device(&host, allow_default_input))?;
 
     // Device name is now stored internally for debugging if needed
     let _device_name = device

@@ -240,6 +240,8 @@ impl App {
     track_ids: &[String],
   ) {
     self.adjust_playlist_track_count(playlist_id, track_ids.len() as i64);
+    // The ownership index only exists in builds with the DJ.
+    #[cfg(feature = "dj-core")]
     if let Some(library) = self.dj.library.as_mut() {
       library.ids.extend(track_ids.iter().cloned());
     }
@@ -604,7 +606,10 @@ mod tests {
       next: None,
       previous: None,
     });
-    app.dj.library = Some(crate::infra::dj::DjLibrary::default());
+    #[cfg(feature = "dj-core")]
+    {
+      app.dj.library = Some(crate::infra::dj::DjLibrary::default());
+    }
 
     let tracks = ["4uLU6hMCjMI75M1A2tKUQC".to_string(), "track2".to_string()];
     app.note_tracks_added_to_playlist(&playlist_id(MINE), &tracks);
@@ -623,14 +628,18 @@ mod tests {
     // `playlist_info` starts every playlist at 5 tracks.
     assert_eq!(count(&app, MINE), (7, 7));
     assert_eq!(count(&app, OTHER), (5, 5), "only the target playlist moves");
-    let ids = &app.dj.library.as_ref().unwrap().ids;
-    assert!(tracks.iter().all(|id| ids.contains(id)));
+    #[cfg(feature = "dj-core")]
+    {
+      let ids = &app.dj.library.as_ref().unwrap().ids;
+      assert!(tracks.iter().all(|id| ids.contains(id)));
+    }
 
     app.note_track_removed_from_playlist(&playlist_id(MINE));
     assert_eq!(count(&app, MINE), (6, 6));
   }
 
   #[test]
+  #[cfg(feature = "dj-core")]
   fn an_add_before_the_ownership_crawl_leaves_the_index_cold() {
     // A cold index must stay `None`: filling it with one add would make
     // `search_tracks` report a complete answer from a single playlist.

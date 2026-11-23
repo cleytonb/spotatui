@@ -15,8 +15,10 @@ pub enum AudioCaptureManager {
 
 impl AudioCaptureManager {
   /// Opens PipeWire capture, or an ALSA monitor or loopback device when PipeWire fails to start.
-  pub fn new(display_bars: usize) -> Option<Self> {
-    PipeWireCapture::new(display_bars)
+  /// The ALSA fallback stays monitor-only, so `device_hint` cannot select a
+  /// microphone there; PipeWire ignores it as well.
+  pub fn new(display_bars: usize, device_hint: Option<&str>) -> Option<Self> {
+    PipeWireCapture::new(display_bars, device_hint)
       .map(Self::PipeWire)
       .or_else(|| {
         log::info!("[audio-viz] trying an ALSA monitor or loopback device instead of PipeWire");
