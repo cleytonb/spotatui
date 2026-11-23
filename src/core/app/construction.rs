@@ -356,12 +356,10 @@ impl App {
       .language
       .resolve(system_language)
       .strings();
-    // A saved Apple Music scope can outlive the build that offered it. Restore
-    // only a source the current picker can select, keeping both mirrors in sync.
-    let sources = Source::picker_sources();
-    if !sources.contains(&runtime_state.active_source) {
-      runtime_state.active_source = sources[0];
-    }
+    // Fork choice: every launch opens on Spotify, whatever source the last
+    // session ended on. `d` still switches sources while the app runs; only the
+    // restore is skipped. Both mirrors stay in sync through `runtime_state`.
+    runtime_state.active_source = Source::Spotify;
     let active_source = runtime_state.active_source;
     // Same reason: read before the move. The config only seeds the DJ's filter;
     // the toggle owns it from then on.
@@ -476,11 +474,11 @@ mod tests {
   }
 
   #[test]
-  fn saved_source_is_preserved_when_the_current_picker_offers_it() {
-    for &source in Source::picker_sources() {
+  fn every_launch_opens_on_spotify_whatever_source_was_saved() {
+    for source in Source::ALL {
       let app = app_restoring(source);
-      assert_eq!(app.active_source, source);
-      assert_eq!(app.runtime_state.active_source, source);
+      assert_eq!(app.active_source, Source::Spotify, "saved {source:?}");
+      assert_eq!(app.runtime_state.active_source, Source::Spotify);
     }
   }
 
