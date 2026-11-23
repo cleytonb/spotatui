@@ -58,6 +58,22 @@ pub(super) enum PlayingItem<'a> {
   Nothing,
 }
 
+/// What [`App::playing_track_details`] reports beyond the playback snapshot.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PlayingTrackDetails {
+  /// Spotify base62 track id, to match against the snapshot's `item_id`.
+  pub id: Option<String>,
+  /// `YYYY`, `YYYY-MM` or `YYYY-MM-DD`; Spotify reports an unknown date as `0000`.
+  pub release_date: Option<String>,
+  /// 1-based; 0 when unknown.
+  pub track_number: u32,
+  /// 1-based; 0 when unknown.
+  pub disc_number: u32,
+  pub explicit: bool,
+  /// The Connect device the cached context names.
+  pub device: Option<String>,
+}
+
 /// The pure half of [`App::playing_item`], so every owner is testable without
 /// an audio device.
 fn resolve_playing_item<'a>(
@@ -91,6 +107,78 @@ impl App {
         .as_ref()
         .and_then(|context| context.item.as_ref()),
     )
+  }
+
+  /// The track-level details the playback snapshot does not carry, for the
+  /// Spotify track playing now. `None` for an episode, a decoded owner, or
+  /// nothing playing. The cached context lags the native player after a skip,
+  /// so a caller matches `id` against the snapshot's item before using it.
+  pub(crate) fn playing_track_details(&self) -> Option<PlayingTrackDetails> {
+    use rspotify::prelude::Id;
+    let device = || {
+      self
+        .current_playback_context
+        .as_ref()
+        .map(|context| context.device.name.clone())
+        .filter(|name| !name.is_empty())
+    };
+    match self.playing_item() {
+      PlayingItem::Spotify(PlayableItem::Track(track)) => Some(PlayingTrackDetails {
+        id: track.id.as_ref().map(|id| id.id().to_string()),
+        release_date: track.album.release_date.clone(),
+        track_number: track.track_number,
+        disc_number: u32::try_from(track.disc_number).unwrap_or(0),
+        explicit: track.explicit,
+        device: device(),
+      }),
+      PlayingItem::QueuedSpotify(track) => Some(PlayingTrackDetails {
+        id: track.id.clone(),
+        release_date: track.release_date.clone(),
+        track_number: track.track_number,
+        disc_number: 0,
+        explicit: track.explicit,
+        device: device(),
+      }),
+      PlayingItem::Spotify(_) | PlayingItem::NotSpotify | PlayingItem::Nothing => None,
+    }
+  }
+
+  /// Ask for Spotify's queue for the now playing panel's "Up next". The fetch
+  /// goes out from [`Self::follow_up_next`] once it can follow the right item.
+  pub(crate) fn request_up_next(&mut self) {
+    self.up_next_pending = true;
+  }
+
+  /// Send a requested "Up next" fetch when it is due, given the id of the item
+  /// playing now. Only the queue screen fetched Spotify's queue before. A
+  /// request stays pending while the panel is open and no fetch can go out, and
+  /// a closed panel drops it, since opening the panel requests one anyway.
+  pub(crate) fn follow_up_next(&mut self, playing_id: Option<&str>) {
+    if !self.up_next_pending {
+      return;
+    }
+    if !self.view.now_playing_panel {
+      self.up_next_pending = false;
+    } else if self.spotify_connected && self.up_next_can_follow(playing_id) {
+      self.up_next_pending = false;
+      self.apply(crate::core::action::Action::RefreshQueue);
+    }
+  }
+
+  /// Whether a queue fetch now would answer for `playing_id`. A fetch with no
+  /// Spotify item to follow only reports a failed load, and under native
+  /// streaming the cached context names the previous item for a moment after a
+  /// skip, so the fetch waits for it. A queue slot's track is not the cached one.
+  fn up_next_can_follow(&self, playing_id: Option<&str>) -> bool {
+    match self.playing_item() {
+      PlayingItem::QueuedSpotify(_) => true,
+      PlayingItem::Spotify(_) => match (self.cached_playback_item_id(), playing_id) {
+        (Some(cached), Some(playing)) => cached == playing,
+        // A Spotify local file has no id to compare.
+        _ => true,
+      },
+      PlayingItem::NotSpotify | PlayingItem::Nothing => false,
+    }
   }
 
   pub(crate) fn playback_owner(&self) -> PlaybackOwner {
@@ -462,34 +550,38 @@ impl App {
     }
   }
 
-  /// Write Soloist's live state over the polled context when the context is Soloist's.
+  /// Write Soloist's live state over the stored context when it is Soloist's,
+  /// and restart the tick's position clock from it. A `polled` context always
+  /// restarts it (its API item and progress come from one response); nothing
+  /// does inside a seek's settle window, where any report can predate the seek.
   #[cfg(feature = "soloist")]
-  pub(crate) fn overlay_soloist_onto(&self, context: &mut rspotify::model::CurrentPlaybackContext) {
+  pub(crate) fn overlay_soloist_snapshot(&mut self, polled: bool) {
     let Some(link) = self.soloist_link.as_ref() else {
+      return;
+    };
+    let Some(context) = self.current_playback_context.as_mut() else {
       return;
     };
     if context.device.id.as_deref() != Some(link.device_id()) {
       return;
     }
-    overlay_soloist(
+    let wrote_position = overlay_soloist(
       context,
       &link.snapshot(),
       chrono::Utc::now().timestamp_millis(),
     );
-  }
-
-  /// Apply the overlay to the stored context and restart the tick's position clock from it.
-  #[cfg(feature = "soloist")]
-  pub(super) fn overlay_soloist_snapshot(&mut self) {
-    let Some(mut context) = self.current_playback_context.take() else {
-      return;
-    };
-    self.overlay_soloist_onto(&mut context);
-    if let Some(progress) = context.progress {
+    let settling_seek = self
+      .last_api_seek
+      .filter(|at| at.elapsed().as_millis() < SEEK_POSITION_IGNORE_MS);
+    if let Some(seek_at) = settling_seek {
+      // Keep a suppressed poll stale, so the tick does not resync from it later.
+      if polled {
+        self.instant_since_last_current_playback_poll = seek_at;
+      }
+    } else if let Some(progress) = context.progress.filter(|_| polled || wrote_position) {
       self.song_progress_ms = progress.num_milliseconds().max(0) as u128;
       self.instant_since_last_current_playback_poll = Instant::now();
     }
-    self.current_playback_context = Some(context);
   }
 
   /// The stream Soloist reports, worded like the Qobuz badge, while it plays for us.
@@ -901,15 +993,27 @@ fn soloist_targets(logged_in: bool, active_device_id: Option<&str>, soloist_id: 
   }
 }
 
+/// Returns whether it wrote Soloist's position as the progress.
 #[cfg(feature = "soloist")]
 fn overlay_soloist(
   context: &mut rspotify::model::CurrentPlaybackContext,
   snapshot: &crate::infra::soloist::link::Snapshot,
   now_ms: i64,
-) {
+) -> bool {
   use crate::infra::soloist::protocol::Repeat;
   context.is_playing = snapshot.status.is_playing();
-  if let Some(anchor) = snapshot.position {
+  let context_uri = context.item.as_ref().and_then(|item| match item {
+    PlayableItem::Track(track) => track.id.as_ref().map(|id| id.uri()),
+    PlayableItem::Episode(episode) => Some(episode.id.uri()),
+    PlayableItem::Unknown(_) => None,
+  });
+  // Until the poll brings the new item, the new track's position must not land under the old one.
+  let same_item = !matches!(
+    (snapshot.item_uri.as_deref(), context_uri.as_deref()),
+    (Some(soloist), Some(context)) if soloist != context
+  );
+  let anchor = snapshot.position.filter(|_| same_item);
+  if let Some(anchor) = anchor {
     let position = if context.is_playing {
       anchor.at(now_ms)
     } else {
@@ -926,6 +1030,7 @@ fn overlay_soloist(
     Repeat::Context => rspotify::model::RepeatState::Context,
     Repeat::Track => rspotify::model::RepeatState::Track,
   };
+  anchor.is_some()
 }
 
 #[cfg(test)]
@@ -1224,6 +1329,93 @@ mod tests {
     ));
   }
 
+  /// A session playing a Spotify track on another device.
+  fn spotify_track_playing() -> (App, std::sync::mpsc::Receiver<IoEvent>) {
+    let (mut app, rx) = session_free_app();
+    app.spotify_connected = true;
+    app.current_playback_context = Some(CurrentPlaybackContext {
+      item: Some(PlayableItem::Track(full_track(
+        "0000000000000000000001",
+        "Playing",
+      ))),
+      ..make_external_context()
+    });
+    (app, rx)
+  }
+
+  const PLAYING_ID: Option<&str> = Some("0000000000000000000001");
+
+  #[test]
+  fn a_requested_up_next_fetches_the_spotify_queue_once() {
+    let (mut app, rx) = spotify_track_playing();
+    app.view.now_playing_panel = true;
+
+    app.request_up_next();
+    app.follow_up_next(PLAYING_ID);
+    assert!(matches!(rx.try_recv(), Ok(IoEvent::GetQueue)));
+
+    app.follow_up_next(PLAYING_ID);
+    assert!(rx.try_recv().is_err(), "nothing was requested again");
+  }
+
+  #[test]
+  fn up_next_fetches_nothing_unless_it_was_requested() {
+    let (mut app, rx) = spotify_track_playing();
+    app.view.now_playing_panel = true;
+
+    app.follow_up_next(PLAYING_ID);
+
+    assert!(rx.try_recv().is_err());
+  }
+
+  #[test]
+  fn up_next_waits_for_a_session_and_a_spotify_item() {
+    let (mut app, rx) = spotify_track_playing();
+    let context = app.current_playback_context.take();
+    app.view.now_playing_panel = true;
+    app.request_up_next();
+
+    app.follow_up_next(PLAYING_ID);
+    assert!(rx.try_recv().is_err(), "no context names the item yet");
+
+    app.current_playback_context = context;
+    app.spotify_connected = false;
+    app.follow_up_next(PLAYING_ID);
+    assert!(rx.try_recv().is_err(), "no session");
+
+    app.spotify_connected = true;
+    app.follow_up_next(PLAYING_ID);
+    assert!(matches!(rx.try_recv(), Ok(IoEvent::GetQueue)));
+  }
+
+  #[test]
+  fn up_next_waits_while_the_cached_context_names_the_previous_item() {
+    let (mut app, rx) = spotify_track_playing();
+    app.view.now_playing_panel = true;
+    app.request_up_next();
+
+    app.follow_up_next(Some("0000000000000000000002"));
+    assert!(
+      rx.try_recv().is_err(),
+      "a fetch now would answer for the old item"
+    );
+
+    app.follow_up_next(PLAYING_ID);
+    assert!(matches!(rx.try_recv(), Ok(IoEvent::GetQueue)));
+  }
+
+  #[test]
+  fn a_closed_panel_drops_a_requested_up_next() {
+    let (mut app, rx) = spotify_track_playing();
+    app.request_up_next();
+    app.follow_up_next(PLAYING_ID);
+
+    app.view.now_playing_panel = true;
+    app.follow_up_next(PLAYING_ID);
+
+    assert!(rx.try_recv().is_err());
+  }
+
   #[test]
   fn playback_owner_is_none_without_a_session() {
     let (app, _rx) = session_free_app();
@@ -1466,9 +1658,98 @@ mod soloist_tests {
     app.current_playback_context = Some(soloist_context());
     app.apply_soloist_event(&link, &playing_state());
 
-    let mut polled = soloist_context();
-    app.overlay_soloist_onto(&mut polled);
+    app.current_playback_context = Some(soloist_context());
+    app.overlay_soloist_snapshot(true);
+    let polled = app.current_playback_context.as_ref().unwrap();
     assert!(polled.is_playing);
     assert_eq!(polled.device.volume_percent, Some(30));
+  }
+
+  #[test]
+  fn a_new_soloist_track_keeps_its_position_off_the_old_item() {
+    let (mut app, link) = app_with_soloist();
+    let soloist_track_context = |id: &str| {
+      let mut context = playing_track_context(full_track(id, id));
+      context.device.id = Some(SOLOIST_ID.to_string());
+      context.progress = Some(chrono::Duration::milliseconds(170_000));
+      context
+    };
+    app.current_playback_context = Some(soloist_track_context("oldtrack"));
+    app.song_progress_ms = 179_000;
+
+    app.apply_soloist_event(
+      &link,
+      &Event::Track {
+        uri: Some("spotify:track:newtrack".to_string()),
+        is_episode: false,
+      },
+    );
+    app.apply_soloist_event(
+      &link,
+      &Event::Position(PositionAnchor {
+        position_ms: 0,
+        timestamp_ms: chrono::Utc::now().timestamp_millis(),
+        speed: 1.0,
+      }),
+    );
+
+    let context = app.current_playback_context.as_ref().unwrap();
+    assert_eq!(context.progress.unwrap().num_milliseconds(), 170_000);
+    assert_eq!(app.song_progress_ms, 179_000, "the clock went back");
+
+    let mut lagging = soloist_track_context("oldtrack");
+    lagging.progress = Some(chrono::Duration::milliseconds(178_000));
+    app.current_playback_context = Some(lagging);
+    app.overlay_soloist_snapshot(true);
+    assert_eq!(
+      app.song_progress_ms, 178_000,
+      "a lagging poll keeps its own progress"
+    );
+
+    app.current_playback_context = Some(soloist_track_context("newtrack"));
+    app.overlay_soloist_snapshot(true);
+    assert!(
+      app.song_progress_ms < 5_000,
+      "the poll did not resync the clock"
+    );
+  }
+
+  #[test]
+  fn a_poll_before_the_new_tracks_position_keeps_the_api_progress() {
+    let (mut app, link) = app_with_soloist();
+    app.current_playback_context = Some(soloist_context());
+    app.apply_soloist_event(&link, &playing_state());
+    app.apply_soloist_event(
+      &link,
+      &Event::Track {
+        uri: Some("spotify:track:newtrack".to_string()),
+        is_episode: false,
+      },
+    );
+
+    let mut polled = playing_track_context(full_track("newtrack", "New"));
+    polled.device.id = Some(SOLOIST_ID.to_string());
+    polled.progress = Some(chrono::Duration::milliseconds(2_000));
+    app.current_playback_context = Some(polled);
+    app.overlay_soloist_snapshot(true);
+    assert_eq!(app.song_progress_ms, 2_000);
+
+    app.song_progress_ms = 9_000;
+    app.apply_soloist_event(&link, &Event::Playback(Status::Playing));
+    assert_eq!(app.song_progress_ms, 9_000, "an event rewound the clock");
+
+    app.song_progress_ms = 60_000;
+    let seek_at = Instant::now();
+    app.last_api_seek = Some(seek_at);
+    app.overlay_soloist_snapshot(true);
+    assert_eq!(app.song_progress_ms, 60_000, "a poll undid the seek");
+    assert_eq!(app.instant_since_last_current_playback_poll, seek_at);
+
+    let Event::State(mut cached) = playing_state() else {
+      unreachable!()
+    };
+    cached.item_uri = Some("spotify:track:newtrack".to_string());
+    app.apply_soloist_event(&link, &Event::State(cached));
+    assert_eq!(app.song_progress_ms, 60_000, "an event undid the seek");
   }
 }

@@ -21,15 +21,14 @@ Fatal errors include YAML syntax errors (the file cannot be parsed at all), and 
 
 ## Interface language
 
-Chinese tables follow in stacked translation PRs. The language choices are selectable now; areas without Chinese data display their English fallback.
-
 `behavior.language` accepts `auto` (the default), `en`, `zh-Hans` (Simplified Chinese),
 and `zh-Hant` (Traditional Chinese). Common spellings such as `zh-CN`, `zh_CN`,
 `zh`, and `ZH-HANS` are accepted and saved canonically. Unknown values warn and
 fall back to `auto` without aborting configuration loading. Change it live in Settings; the terminal and
 browser/desktop frontends share the same table. The language picker displays `auto` as
 **Auto (system)** / **自动（跟随系统）** / **自動（跟隨系統）**, while the saved value stays
-`auto`. CLI output and logs remain English.
+`auto`. CLI output and logs remain English, and strings without a Chinese translation yet
+display in English.
 
 `auto` reads the first nonempty `LC_ALL`, `LC_MESSAGES`, or `LANG`. Without one,
 macOS uses the first preferred `AppleLanguages` entry and Windows uses its UI
@@ -297,6 +296,54 @@ behavior:
 - `small_terminal_width` / `small_terminal_height` are the responsive-layout breakpoints. At or above `small_terminal_width` columns the app uses the wide layout (search box inside the sidebar); below it the search box gets its own full-width top row. `enforce_wide_search_bar: true` forces the full-width search row regardless of width.
 - Unknown position strings fall back to the default with a warning.
 - Mouse hit-testing follows every arrangement automatically.
+
+### Detached panes
+
+The lyrics, the visualizer, cover art, the queue and the mini player can leave full screen and stay beside the main layout as panes. Open one of them and press `Alt+d`. The new pane goes beside the focused pane: side by side when that pane is wide, stacked when it is tall.
+
+| Key | Does |
+|-----|------|
+| `Alt+d` | Detach the open full-screen view into a pane, or put the focused pane back to full screen |
+| `Alt+x` | Close the focused pane, or hide the main layout when it has focus |
+| `Alt+h` / `Alt+j` / `Alt+k` / `Alt+l`, or `Alt` with an arrow key | Focus the pane on the left, below, above, on the right |
+| `Alt+H` / `Alt+J` / `Alt+K` / `Alt+L`, or `Alt+Shift` with an arrow key | Swap the focused pane with that neighbor |
+| `Alt+r` | Turn the split of the focused pane (side by side or stacked) |
+| `Alt+=` / `Alt+-` | Make the focused pane larger or smaller |
+| `Alt+0` | Close every pane and show the main layout again |
+
+- A focused pane gets the keys of its view (for example `V` cycles the visualizer style). `Esc` or the back key gives the focus back to the main layout. The open key of a detached view (`B` for the lyrics) focuses its pane.
+- With mouse input on, a click focuses a pane, `[x]` on its border closes it, and a drag on the line between two panes resizes them.
+- The keys are `detach_pane`, `close_pane`, `focus_pane_left`, `focus_pane_down`, `focus_pane_up`, `focus_pane_right`, `move_pane_left`, `move_pane_down`, `move_pane_up`, `move_pane_right`, `rotate_pane`, `grow_pane`, `shrink_pane` and `reset_panes` under `keybindings` in `config.yml`.
+- On macOS the terminal must send Option as Meta, or the `Alt` keys type special characters: turn on "Use Option as Meta key" in Terminal (Settings > Profiles > Keyboard), or set the Option key to "Esc+" in iTerm2 (Settings > Profiles > Keys). You can also rebind the keys to ones without `Alt`.
+- The layout is saved as `pane_layout` in `state.yml`, a tree you can also edit by hand:
+
+  ```yaml
+  pane_layout:
+    axis: horizontal   # horizontal = side by side, vertical = stacked
+    percent: 60        # the share of `first`, 10..=90
+    first: main
+    second:
+      axis: vertical
+      percent: 50
+      first: lyrics
+      second: visualizer
+  ```
+
+  The leaves are `main`, `lyrics`, `visualizer`, `cover_art`, `queue` and `mini_player`. A leaf can appear only once; otherwise the layout loads as `main` alone. A layout without `main` is a hidden main layout.
+- `Alt+d` refuses a new pane when it, or the main layout, would be too small for the terminal. If the window becomes smaller than a saved layout needs, the panes hide and the main layout takes the whole window. They come back when the window is large enough. While they hide, `Alt+x` closes one hidden pane at a time.
+- `Alt+x` with the focus on the main layout hides it, when at least one pane is open. The search box, the help button and the settings button stay in a row above the panes, and the playbar stays in its usual place. The main layout comes back when a key opens a new screen in it, for example a search or a jump to an album, or when you press `Alt+0`.
+
+### Panes in the desktop app and the browser GUI
+
+The GUI has its own layout, saved as `gui_pane_layout` in `state.yml`. The Now Playing panel and the queue are panes there, and the lyrics, the visualizer and the cover art can join them.
+
+- The button at the top right of the Lyrics and Visualizer pages, and the panel button in the Now Playing header for the cover art, open that view as a pane.
+- Drag a pane by its header. A highlighted box shows where it will go: along an edge of the window, along an edge of another pane, or, in the middle of another pane, in its place. Release anywhere else and the pane floats over the page. A red box means there is not enough room, and the drop does nothing. `Esc` cancels a drag.
+- Drag the line between two panes to resize them. It snaps to 25, 33, 50, 67 and 75 percent. A double-click sets 50 percent; arrow keys on a focused line move it.
+- When a pane is docked beside the main view, the library button in the top bar hides the main view and the panes take its room. The same button, a new page, or `Alt+0` shows it again. `close_pane` with the focus in the main view hides it too.
+- Drag the dots at the top of the top bar or the player bar to move the bar to another edge of the window. On the left or the right, the top bar becomes a column of icons and the player bar a column with the cover on top. The arrow keys on the focused dots do the same.
+- The pane keys `detach_pane`, `close_pane`, `focus_pane_*` and `reset_panes` work in the GUI too. In a browser tab the browser can take `Alt` keys for itself; the desktop app gets them all.
+- Below 1101 pixels of width the panes hide and the bars go back to the top and the bottom. The saved layout stays and comes back when the window is wider.
 
 ## Other behavior keys
 

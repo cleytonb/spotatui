@@ -123,6 +123,7 @@ impl Default for App {
       is_fetching_current_playback: false,
       spotify_connected: false,
       pending_keybinding_persist: None,
+      up_next_pending: false,
       keybinding_runtime: KeybindingRuntimeState::default(),
 
       active_announcement: None,
@@ -307,6 +308,13 @@ impl App {
   #[cfg(all(test, feature = "tui"))]
   pub(crate) fn with_playback(mut self, context: CurrentPlaybackContext) -> App {
     self.current_playback_context = Some(context);
+    self
+  }
+
+  /// This app with song progress seeded, for tests.
+  #[cfg(all(test, feature = "tui"))]
+  pub(crate) fn with_song_progress(mut self, progress_ms: u128) -> App {
+    self.song_progress_ms = progress_ms;
     self
   }
 

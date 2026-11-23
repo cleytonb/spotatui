@@ -1,7 +1,9 @@
 use crate::core::action::LibraryTarget;
 use crate::core::geometry::Viewport;
+use crate::core::gui_layout::GuiLayout;
 use crate::core::input::Key;
 use crate::core::pagination::{CursorPaged, Paged};
+use crate::core::pane::{Pane, PaneNode};
 use crate::core::plugin_api::{
   ArtistInfo, EpisodeInfo, PlayableInfo, PlaylistInfo, SavedAlbumInfo, ShowInfo, TrackInfo,
 };
@@ -401,6 +403,8 @@ pub struct App {
   /// free-source launch doesn't spam "connect Spotify" messages.
   pub spotify_connected: bool,
   pending_keybinding_persist: Option<PendingKeybindingPersist>,
+  /// A fetch of Spotify's queue for "Up next" that has not gone out yet.
+  up_next_pending: bool,
   pub keybinding_runtime: KeybindingRuntimeState,
 
   pub active_announcement: Option<Announcement>,

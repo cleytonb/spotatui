@@ -155,6 +155,15 @@ fn split_playbar_rows(area: Rect) -> (Rect, Rect, Rect) {
   (artist_area, controls_area, progress_area)
 }
 
+/// Whether `layout_chunk` is the main playbar while the now playing panel
+/// shows: the panel has the cover, so the playbar leaves its thumbnail out.
+/// A Mini player pane's playbar is another rect and keeps its own.
+#[cfg(feature = "cover-art")]
+fn now_playing_panel_beside(app: &App, layout_chunk: Rect) -> bool {
+  crate::tui::layout::compute_main_layout(app)
+    .is_some_and(|areas| areas.now_playing.is_some() && areas.playbar == layout_chunk)
+}
+
 fn playbar_layout_areas(app: &App, layout_chunk: Rect) -> PlaybarLayoutAreas {
   #[cfg(feature = "cover-art")]
   {
@@ -164,6 +173,7 @@ fn playbar_layout_areas(app: &App, layout_chunk: Rect) -> PlaybarLayoutAreas {
     let (other, cover_art) = if app
       .user_config
       .do_draw_cover_art(crate::tui::cover_art::full_image_support())
+      && !now_playing_panel_beside(app, layout_chunk)
     {
       let cover_layout = playbar_cover_layout(
         other,
@@ -815,7 +825,7 @@ pub fn draw_miniplayer(f: &mut Frame<'_>, app: &App) {
 }
 
 #[cfg(feature = "cover-art")]
-fn draw_cover_art_content(f: &mut Frame<'_>, app: &App, area: Rect) {
+pub(crate) fn draw_cover_art_content(f: &mut Frame<'_>, app: &App, area: Rect) {
   use ratatui::widgets::Clear;
 
   // Clear the area to remove any lingering terminal image protocol artifacts

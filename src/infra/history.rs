@@ -30,6 +30,8 @@ const SYNC_BASE_URL_ENV_KEY: &str = "SPOTATUI_SYNC_BASE_URL";
 const MAX_INTERVAL_MS: u64 = 5_000;
 const REPLAY_RESET_THRESHOLD_MS: u128 = 15_000;
 const REPLAY_PREVIOUS_PROGRESS_FLOOR_MS: u128 = 30_000;
+/// Longer than a stale start: one playback poll at the default 5 s plus a collector tick.
+const REPLAY_MIN_LISTENED_MS: u64 = 10_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -930,8 +932,11 @@ impl HistoryCollector {
         }
         let should_roll = self.current.as_ref().is_some_and(|current| {
           current.identity != identity
-            || (current.last_progress_ms > REPLAY_PREVIOUS_PROGRESS_FLOOR_MS
-              && snapshot.progress_ms + REPLAY_RESET_THRESHOLD_MS < current.last_progress_ms)
+            || is_replay(
+              current.listened_ms,
+              current.last_progress_ms,
+              snapshot.progress_ms,
+            )
         });
 
         if should_roll {
@@ -970,6 +975,13 @@ impl HistoryCollector {
     append_listen_record(&record)?;
     Ok(Some(record))
   }
+}
+
+/// Only a session heard for a while can replay, so a stale end position never splits a stub off.
+fn is_replay(listened_ms: u64, last_progress_ms: u128, progress_ms: u128) -> bool {
+  listened_ms > REPLAY_MIN_LISTENED_MS
+    && last_progress_ms > REPLAY_PREVIOUS_PROGRESS_FLOOR_MS
+    && progress_ms + REPLAY_RESET_THRESHOLD_MS < last_progress_ms
 }
 
 impl SessionIdentity {
@@ -2839,10 +2851,11 @@ async fn sync_history_to_cloud_with_client(
     return Ok(());
   }
 
+  let upload: Vec<ListenRecord> = new_listens.into_iter().map(without_local_paths).collect();
   let response = client
     .post(resolve_sync_url(CLOUD_SYNC_PATH))
     .header("Authorization", format!("Bearer {}", sync_token))
-    .json(&new_listens)
+    .json(&upload)
     .send()
     .await?;
 
@@ -2853,7 +2866,7 @@ async fn sync_history_to_cloud_with_client(
     tokio::task::spawn_blocking(move || write_sync_offset(&path, next_offset)).await??;
     log::info!(
       "successfully synchronized listening history to cloud ({} tracks)",
-      new_listens.len()
+      upload.len()
     );
   } else {
     let status = response.status();
@@ -2867,6 +2880,23 @@ async fn sync_history_to_cloud_with_client(
   }
 
   Ok(())
+}
+
+/// `record` without a `file:` URI, which is an absolute path with the user name in it.
+fn without_local_paths(mut record: ListenRecord) -> ListenRecord {
+  use crate::core::queue::{queue_item_source, QueueItemSource};
+  let local = |uri: &Option<String>| {
+    uri
+      .as_deref()
+      .is_some_and(|uri| queue_item_source(uri) == QueueItemSource::LocalFile)
+  };
+  if local(&record.item_uri) {
+    record.item_uri = None;
+  }
+  if local(&record.context_uri) {
+    record.context_uri = None;
+  }
+  record
 }
 
 pub async fn sync_history_to_cloud(sync_token: &str) -> Result<()> {
@@ -3182,6 +3212,37 @@ mod tests {
     assert_eq!(current.started_at, started_at, "the listen was rolled");
     assert_eq!(current.title, "Real Title");
     assert_eq!(current.artists, ["Real Artist"]);
+  }
+
+  #[test]
+  fn a_new_track_sampled_at_the_old_end_position_is_not_a_replay() {
+    let uri = "subsonic:track:42";
+    let mut collector = HistoryCollector::default();
+    for _ in 0..3 {
+      let mut stale = subsonic_snapshot(uri, "Next", &["Artist"]);
+      stale.progress_ms = 200_000;
+      collector.observe(Some(stale)).unwrap();
+    }
+    let started_at = Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
+    collector.current.as_mut().unwrap().started_at = started_at;
+
+    let mut fresh = subsonic_snapshot(uri, "Next", &["Artist"]);
+    fresh.progress_ms = 1_000;
+    collector.observe(Some(fresh)).unwrap();
+
+    assert_eq!(collector.current.as_ref().unwrap().started_at, started_at);
+  }
+
+  #[test]
+  fn only_a_drop_after_a_real_listen_is_a_replay() {
+    assert!(is_replay(120_000, 120_000, 1_000));
+    assert!(is_replay(25_000, 70_000, 1_000), "a short first listen");
+    assert!(!is_replay(6_000, 200_000, 1_000), "a stale start");
+    assert!(
+      !is_replay(120_000, 20_000, 1_000),
+      "below the progress floor"
+    );
+    assert!(!is_replay(120_000, 120_000, 110_000), "a small step back");
   }
 
   #[test]
@@ -3542,6 +3603,22 @@ mod tests {
     assert_eq!(plays[4], 3);
     assert_eq!(stats.week_tracks.len(), 1);
     assert!(stats.movements.is_empty());
+  }
+
+  #[test]
+  fn a_local_file_path_stays_out_of_the_cloud_upload() {
+    let mut record = record_at(3, 60_000, true);
+    record.item_uri = Some("file:///home/alice/Music/a.flac".to_string());
+    record.context_uri = Some("file:///home/alice/Music".to_string());
+    let line = serde_json::to_string(&without_local_paths(record)).unwrap();
+    assert!(!line.contains("alice"), "{line}");
+
+    let mut record = record_at(3, 60_000, true);
+    record.item_uri = Some("spotify:track:abc".to_string());
+    assert_eq!(
+      without_local_paths(record).item_uri.as_deref(),
+      Some("spotify:track:abc")
+    );
   }
 
   #[test]

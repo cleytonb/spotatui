@@ -42,6 +42,16 @@ fn row(description: &'static str, key: HelpKey, context: &'static str) -> HelpEn
   }
 }
 
+/// A pane key with its fixed arrow alias, for example `<Alt+h> | <Alt+Left>`.
+fn with_arrow_alias(app: &App, key: Key, modifiers: &str, arrow: &str) -> String {
+  format!(
+    "{} | <{}+{}>",
+    key,
+    modifiers,
+    app.strings().help.arrow_key(arrow)
+  )
+}
+
 impl HelpEntry {
   fn needs(mut self, needs: Requirement) -> Self {
     self.needs = needs;
@@ -260,6 +270,18 @@ pub fn help_entries_for(strings: &crate::core::i18n::Strings) -> Vec<HelpEntry> 
       help.context_lyrics,
     ),
     row(
+      help.lyrics_seek,
+      Custom(|app| {
+        let submit = app.user_config.keys.submit;
+        if submit == Key::Enter {
+          "<Enter>".to_string()
+        } else {
+          format!("{submit} | <Enter>")
+        }
+      }),
+      help.context_lyrics,
+    ),
+    row(
       help.miniplayer,
       Binding(|k| k.miniplayer_view),
       help.context_general,
@@ -304,12 +326,108 @@ pub fn help_entries_for(strings: &crate::core::i18n::Strings) -> Vec<HelpEntry> 
       help.context_playbar,
     )
     .needs(SESSION),
+    row(
+      help.now_playing_panel,
+      Literal("<Enter>"),
+      help.context_playbar,
+    ),
     row(help.quick_add_playing, Literal("W"), help.context_global).needs(SESSION),
     row(help.sidebar_narrower, Literal("{"), help.context_layout),
     row(help.sidebar_wider, Literal("}"), help.context_layout),
     row(help.panels_shorter, Literal("("), help.context_layout),
     row(help.panels_taller, Literal(")"), help.context_layout),
     row(help.layout_reset, Literal("|"), help.context_layout),
+    row(
+      help.pane_detach,
+      Binding(|k| k.detach_pane),
+      help.context_layout,
+    ),
+    row(
+      help.pane_close,
+      Binding(|k| k.close_pane),
+      help.context_layout,
+    ),
+    row(
+      help.pane_focus_left,
+      Custom(|app| with_arrow_alias(app, app.user_config.keys.focus_pane_left, "Alt", "Left")),
+      help.context_layout,
+    ),
+    row(
+      help.pane_focus_down,
+      Custom(|app| with_arrow_alias(app, app.user_config.keys.focus_pane_down, "Alt", "Down")),
+      help.context_layout,
+    ),
+    row(
+      help.pane_focus_up,
+      Custom(|app| with_arrow_alias(app, app.user_config.keys.focus_pane_up, "Alt", "Up")),
+      help.context_layout,
+    ),
+    row(
+      help.pane_focus_right,
+      Custom(|app| with_arrow_alias(app, app.user_config.keys.focus_pane_right, "Alt", "Right")),
+      help.context_layout,
+    ),
+    row(
+      help.pane_move_left,
+      Custom(|app| {
+        with_arrow_alias(
+          app,
+          app.user_config.keys.move_pane_left,
+          "Alt+Shift",
+          "Left",
+        )
+      }),
+      help.context_layout,
+    ),
+    row(
+      help.pane_move_down,
+      Custom(|app| {
+        with_arrow_alias(
+          app,
+          app.user_config.keys.move_pane_down,
+          "Alt+Shift",
+          "Down",
+        )
+      }),
+      help.context_layout,
+    ),
+    row(
+      help.pane_move_up,
+      Custom(|app| with_arrow_alias(app, app.user_config.keys.move_pane_up, "Alt+Shift", "Up")),
+      help.context_layout,
+    ),
+    row(
+      help.pane_move_right,
+      Custom(|app| {
+        with_arrow_alias(
+          app,
+          app.user_config.keys.move_pane_right,
+          "Alt+Shift",
+          "Right",
+        )
+      }),
+      help.context_layout,
+    ),
+    row(
+      help.pane_rotate,
+      Binding(|k| k.rotate_pane),
+      help.context_layout,
+    ),
+    row(
+      help.pane_grow,
+      Binding(|k| k.grow_pane),
+      help.context_layout,
+    ),
+    row(
+      help.pane_shrink,
+      Binding(|k| k.shrink_pane),
+      help.context_layout,
+    ),
+    row(
+      help.pane_reset,
+      Binding(|k| k.reset_panes),
+      help.context_layout,
+    ),
     row(
       help.remove_playlist_track,
       Literal("x"),
@@ -1024,6 +1142,7 @@ mod tests {
         event(help.lyrics_follow),
         help.key_alternative("f", "<Esc>")
       );
+      assert_eq!(event(help.lyrics_seek), "<Enter>");
     }
   }
 

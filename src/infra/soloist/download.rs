@@ -12,6 +12,8 @@ use tokio::sync::Mutex;
 use crate::core::app::App;
 
 const CDN: &str = "https://soloist-builds.spotifycdn.com/";
+/// A cap on the archive, far above a real build, so a bad response cannot fill the disk.
+const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const BINARY: &str = if cfg!(windows) {
   "soloist.exe"
 } else {
@@ -25,8 +27,15 @@ pub enum Failure {
   Failed(String),
 }
 
-fn failed(error: impl std::fmt::Display) -> Failure {
-  Failure::Failed(error.to_string())
+fn failed(error: impl std::error::Error) -> Failure {
+  let mut message = error.to_string();
+  let mut source = error.source();
+  while let Some(cause) = source {
+    message.push_str(": ");
+    message.push_str(&cause.to_string());
+    source = cause.source();
+  }
+  Failure::Failed(message)
 }
 
 /// The archive Spotify publishes for `os` and `arch`, in `std::env::consts` names.
@@ -79,7 +88,8 @@ pub async fn run(app: Arc<Mutex<App>>) {
 
 async fn install(app: &Arc<Mutex<App>>) -> Result<PathBuf, Failure> {
   let name = archive_name(std::env::consts::OS, std::env::consts::ARCH).ok_or(Failure::NoBuild)?;
-  let root = crate::core::paths::soloist_bin_dir().ok_or_else(|| failed("no state directory"))?;
+  let root = crate::core::paths::soloist_bin_dir()
+    .ok_or_else(|| Failure::Failed("no state directory".to_string()))?;
   let stamp = SystemTime::now()
     .duration_since(UNIX_EPOCH)
     .map(|since| since.as_secs())
@@ -91,7 +101,7 @@ async fn install(app: &Arc<Mutex<App>>) -> Result<PathBuf, Failure> {
   let result = async {
     fetch(app, &format!("{CDN}{name}"), &archive).await?;
     extract(&archive, &dir).await?;
-    find_binary(&dir, 3).ok_or_else(|| failed(format!("no {BINARY} in {name}")))
+    find_binary(&dir, 3).ok_or_else(|| Failure::Failed(format!("no {BINARY} in {name}")))
   }
   .await;
   let _ = tokio::fs::remove_file(&archive).await;
@@ -121,12 +131,23 @@ async fn fetch(app: &Arc<Mutex<App>>, url: &str, to: &Path) -> Result<(), Failur
     .and_then(reqwest::Response::error_for_status)
     .map_err(failed)?;
   let total = response.content_length();
+  let too_large = || {
+    Failure::Failed(format!(
+      "the archive is larger than {MAX_ARCHIVE_BYTES} bytes"
+    ))
+  };
+  if total.is_some_and(|total| total > MAX_ARCHIVE_BYTES) {
+    return Err(too_large());
+  }
   let mut file = tokio::fs::File::create(to).await.map_err(failed)?;
   let mut received = 0;
   let mut shown = 0;
   while let Some(chunk) = response.chunk().await.map_err(failed)? {
-    file.write_all(&chunk).await.map_err(failed)?;
     received += chunk.len() as u64;
+    if received > MAX_ARCHIVE_BYTES {
+      return Err(too_large());
+    }
+    file.write_all(&chunk).await.map_err(failed)?;
     if let Some(now) = percent(received, total).filter(|now| *now >= shown + 10) {
       shown = now;
       app.lock().await.soloist_download_progress(now);
@@ -142,8 +163,13 @@ async fn extract(archive: &Path, into: &Path) -> Result<(), Failure> {
   let program = std::env::var_os("SystemRoot")
     .map(|root| Path::new(&root).join("System32").join("tar.exe"))
     .unwrap_or_else(|| PathBuf::from("tar"));
+  // The system tar first, so a `tar` earlier on PATH does not see the archive; NixOS has none there.
   #[cfg(not(windows))]
-  let program = PathBuf::from("tar");
+  let program = ["/usr/bin/tar", "/bin/tar"]
+    .iter()
+    .map(PathBuf::from)
+    .find(|path| path.is_file())
+    .unwrap_or_else(|| PathBuf::from("tar"));
   let mut command = tokio::process::Command::new(program);
   command
     .arg("-xf")
@@ -159,7 +185,7 @@ async fn extract(archive: &Path, into: &Path) -> Result<(), Failure> {
     return Ok(());
   }
   let stderr = String::from_utf8_lossy(&output.stderr);
-  Err(failed(format!("tar: {}", stderr.trim())))
+  Err(Failure::Failed(format!("tar: {}", stderr.trim())))
 }
 
 /// Older downloads; one that still runs on Windows stays until the next download.
@@ -178,6 +204,52 @@ fn remove_other_builds(root: &Path, keep: &Path) {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// A stand-in for reqwest's error chain: prints only its label and hides the
+  /// inner error in `source()`, like reqwest::Error does.
+  #[derive(Debug)]
+  struct Context<E>(&'static str, E);
+
+  impl<E: std::error::Error + 'static> std::fmt::Display for Context<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+      f.write_str(self.0)
+    }
+  }
+
+  impl<E: std::error::Error + 'static> std::error::Error for Context<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+      Some(&self.1)
+    }
+  }
+
+  #[test]
+  fn failed_includes_every_level_of_the_error_chain() {
+    let error = Context(
+      "error decoding response body",
+      Context(
+        "error reading a body from connection",
+        std::io::Error::new(
+          std::io::ErrorKind::ConnectionReset,
+          "connection reset by peer",
+        ),
+      ),
+    );
+    assert_eq!(
+      failed(error),
+      Failure::Failed(
+        "error decoding response body: error reading a body from connection: connection reset by peer"
+          .to_string()
+      )
+    );
+  }
+
+  #[test]
+  fn failed_without_a_source_keeps_the_message_alone() {
+    assert_eq!(
+      failed(std::io::Error::other("disk full")),
+      Failure::Failed("disk full".to_string())
+    );
+  }
 
   #[test]
   fn each_published_build_maps_to_its_archive() {
