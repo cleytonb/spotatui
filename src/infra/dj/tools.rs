@@ -311,7 +311,9 @@ pub const TOOLS: &[ToolSpec] = &[
     title: "Add to playlist",
     description: "Add tracks to the end of a playlist the user owns or collaborates on.",
     read_only: false,
-    needs_network: false,
+    // Runs on the Spotify lane so the answer reports what Spotify did, not
+    // just that the add was dispatched.
+    needs_network: true,
     dj: false,
     destructive: false,
     schema: || {
@@ -867,7 +869,8 @@ impl DjToolCall {
       | Self::GetArtist { .. }
       | Self::ListDevices
       | Self::TransferPlayback { .. }
-      | Self::LikeTracks { .. } => true,
+      | Self::LikeTracks { .. }
+      | Self::AddToPlaylist { .. } => true,
       Self::GetListeningHistory { .. }
       | Self::GetNowPlaying
       | Self::GetQueue
@@ -876,7 +879,6 @@ impl DjToolCall {
       | Self::SetDjVibe { .. }
       | Self::ListPlaylists
       | Self::CreatePlaylist { .. }
-      | Self::AddToPlaylist { .. }
       | Self::RemoveFromPlaylist { .. }
       | Self::FollowArtist { .. } => false,
     }
@@ -965,24 +967,6 @@ pub async fn execute_app_only(app: &Arc<Mutex<App>>, call: &DjToolCall) -> Optio
         ToolOutcome::ok_localized(|strings| strings.status.tools.creating(name, uris.len()))
       }),
     ),
-    DjToolCall::AddToPlaylist { playlist, uris } => {
-      let mut app = app.lock().await;
-      if !app.spotify_connected {
-        return Some(not_connected());
-      }
-      if let Some(refused) = uneditable_playlist(&app, playlist) {
-        return Some(refused);
-      }
-      for uri in uris {
-        app.apply(Action::AddTrackToPlaylist {
-          playlist: playlist.clone(),
-          track: uri.clone(),
-        });
-      }
-      Some(ToolOutcome::ok_localized(|strings| {
-        strings.status.tools.adding(uris.len(), playlist)
-      }))
-    }
     DjToolCall::RemoveFromPlaylist {
       playlist,
       uri,
@@ -1035,7 +1019,8 @@ pub async fn execute_app_only(app: &Arc<Mutex<App>>, call: &DjToolCall) -> Optio
     | DjToolCall::GetArtist { .. }
     | DjToolCall::ListDevices
     | DjToolCall::TransferPlayback { .. }
-    | DjToolCall::LikeTracks { .. } => None,
+    | DjToolCall::LikeTracks { .. }
+    | DjToolCall::AddToPlaylist { .. } => None,
   }
 }
 
@@ -1059,7 +1044,7 @@ fn owns_playlist(app: &App, playlist: &PlaylistInfo) -> bool {
 }
 
 /// An error for a loaded playlist the user neither owns nor collaborates on.
-fn uneditable_playlist(app: &App, uri: &str) -> Option<ToolOutcome> {
+pub(crate) fn uneditable_playlist(app: &App, uri: &str) -> Option<ToolOutcome> {
   let playlist = app
     .all_playlists()
     .iter()
@@ -1986,19 +1971,18 @@ mod tests {
   }
 
   #[tokio::test]
-  async fn adding_to_a_playlist_sends_one_add_per_track() {
-    use crate::infra::network::IoEvent;
+  async fn adding_to_a_playlist_waits_for_spotify_on_the_network_lane() {
+    // Answered by `Network::dj_add_to_playlist` once Spotify replies, never by
+    // a fire-and-forget dispatch that reports success before the request runs.
     let (app, rx) = app_with_channel(true);
     let call = parse_call(
       "add_to_playlist",
       &json!({"playlist": PLAYLIST, "uris": [TRACK, TRACK]}),
     )
     .unwrap();
-    let outcome = execute_app_only(&app, &call).await.unwrap();
-    assert!(!outcome.is_error);
-    for _ in 0..2 {
-      assert!(matches!(rx.try_recv(), Ok(IoEvent::AddTrackToPlaylist(..))));
-    }
+    assert!(call.needs_network());
+    assert!(execute_app_only(&app, &call).await.is_none());
+    assert!(rx.try_recv().is_err(), "nothing reaches the pump");
   }
 
   #[tokio::test]
@@ -2013,20 +1997,18 @@ mod tests {
         playlist_info("00000000000000000000p3", "Shared", "other", true),
       ]);
     }
-    for tool in ["add_to_playlist", "remove_from_playlist"] {
-      let args = json!({"playlist": "spotify:playlist:00000000000000000000p2", "uris": [TRACK], "uri": TRACK, "position": 0});
-      let outcome = execute_app_only(&app, &parse_call(tool, &args).unwrap())
-        .await
-        .unwrap();
-      assert!(outcome.is_error, "{tool}");
-    }
-    assert!(rx.try_recv().is_err(), "nothing reaches the pump");
-
-    let shared = json!({"playlist": "spotify:playlist:00000000000000000000p3", "uris": [TRACK]});
-    let outcome = execute_app_only(&app, &parse_call("add_to_playlist", &shared).unwrap())
+    let args =
+      json!({"playlist": "spotify:playlist:00000000000000000000p2", "uri": TRACK, "position": 0});
+    let outcome = execute_app_only(&app, &parse_call("remove_from_playlist", &args).unwrap())
       .await
       .unwrap();
-    assert!(!outcome.is_error);
+    assert!(outcome.is_error);
+    assert!(rx.try_recv().is_err(), "nothing reaches the pump");
+
+    // `add_to_playlist` runs on the network lane, which asks the same gate.
+    let app = app.lock().await;
+    assert!(uneditable_playlist(&app, "spotify:playlist:00000000000000000000p2").is_some());
+    assert!(uneditable_playlist(&app, "spotify:playlist:00000000000000000000p3").is_none());
   }
 
   #[tokio::test]

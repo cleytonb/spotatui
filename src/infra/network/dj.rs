@@ -139,6 +139,9 @@ impl Network {
       DjToolCall::ListDevices => self.dj_devices().await,
       DjToolCall::TransferPlayback { device } => self.dj_transfer(&device).await,
       DjToolCall::LikeTracks { uris, liked } => self.dj_like(uris, liked).await,
+      DjToolCall::AddToPlaylist { playlist, uris } => {
+        self.dj_add_to_playlist(&playlist, &uris).await
+      }
       // Everything else is answered without the network, before the event is
       // ever dispatched (`tools::execute_app_only`).
       other => ToolOutcome::error(format!(
@@ -300,6 +303,34 @@ impl Network {
       persist: false,
     });
     ToolOutcome::ok_localized(|strings| strings.status.tools.transfer(&name))
+  }
+
+  /// Adds the tracks and answers with what Spotify did. Dispatching through the
+  /// pump instead answered "adding" before the request ran, so a failure never
+  /// reached the caller.
+  async fn dj_add_to_playlist(&self, playlist: &str, uris: &[String]) -> ToolOutcome {
+    use rspotify::prelude::Id;
+    if let Some(refused) =
+      crate::infra::dj::tools::uneditable_playlist(&*self.app.lock().await, playlist)
+    {
+      return refused;
+    }
+    let Some(playlist_id) = crate::infra::network::ids::playlist_id(playlist) else {
+      return ToolOutcome::error(format!("Not a Spotify playlist: {playlist}"));
+    };
+    if let Err(e) = self.playlist_add_uris(playlist_id.id(), uris).await {
+      return ToolOutcome::error(format!("Could not add to the playlist: {e}"));
+    }
+    let track_ids: Vec<String> = uris
+      .iter()
+      .filter_map(|uri| uri.strip_prefix("spotify:track:"))
+      .map(str::to_string)
+      .collect();
+    let name = self
+      .note_playlist_add(&playlist_id, &track_ids)
+      .await
+      .unwrap_or_else(|| playlist.to_string());
+    ToolOutcome::ok_localized(|strings| strings.status.tools.adding(uris.len(), &name))
   }
 
   /// Toggles only the tracks whose liked state differs, after reading it.

@@ -1031,7 +1031,11 @@ impl Network {
     Ok(())
   }
 
-  async fn playlist_add_uris(&self, playlist_id: &str, uris: &[String]) -> anyhow::Result<()> {
+  pub(super) async fn playlist_add_uris(
+    &self,
+    playlist_id: &str,
+    uris: &[String],
+  ) -> anyhow::Result<()> {
     for batch in uris.chunks(100) {
       spotify_api_request_json_for(
         Method::POST,
@@ -1042,6 +1046,41 @@ impl Network {
       .await?;
     }
     Ok(())
+  }
+
+  /// Bookkeeping after Spotify confirmed an add, shared by the TUI picker and
+  /// the DJ tool. Returns the playlist's name when the sidebar knows it.
+  pub(super) async fn note_playlist_add(
+    &self,
+    playlist_id: &PlaylistId<'static>,
+    track_ids: &[String],
+  ) -> Option<String> {
+    let mut app = self.app.lock().await;
+    let playlist_name = app
+      .all_playlists()
+      .iter()
+      .find(|playlist| playlist.id.as_deref() == Some(playlist_id.id()))
+      .map(|playlist| playlist.name.clone());
+
+    // The added tracks land at the end of the playlist, past every page the
+    // opened playlist already cached, so those pages are stale. `is_complete`
+    // reads false here, making the next search or sort walk Spotify again.
+    // This runs on any screen: an add from search results or an agent leaves
+    // the cached pages behind too.
+    app.mark_playlist_track_pages_stale(playlist_id);
+    // The sidebar count and the DJ's ownership index are startup snapshots.
+    app.note_tracks_added_to_playlist(playlist_id, track_ids);
+
+    if app.is_current_route_playlist_track_table_for(playlist_id) {
+      let playlist_offset = app.playlist_offset;
+      // Refresh the page the user is looking at. It doesn't make the rest of
+      // the cache current, which is why the mark above stays.
+      app.dispatch(IoEvent::GetPlaylistItems(
+        playlist_id.id().to_string(),
+        playlist_offset,
+      ));
+    }
+    playlist_name
   }
 
   pub(super) async fn library_remove_uris(&self, uris: &[String]) -> anyhow::Result<()> {
@@ -1970,31 +2009,11 @@ impl LibraryNetwork for Network {
       .await
     {
       Ok(_) => {
+        let playlist_name = self
+          .note_playlist_add(&playlist_id, &[track_id.id().to_string()])
+          .await;
         let status_message = {
-          let mut app = self.app.lock().await;
-          let playlist_name = app
-            .all_playlists()
-            .iter()
-            .find(|playlist| playlist.id.as_deref() == Some(playlist_id.id()))
-            .map(|playlist| playlist.name.clone());
-
-          // The added track lands at the end of the playlist, past every page
-          // the opened playlist already cached, so those pages are stale.
-          // `is_complete` reads false here, making the next search or sort walk
-          // Spotify again. This runs on any screen: an add from search results
-          // or an agent leaves the cached pages behind too.
-          app.mark_playlist_track_pages_stale(&playlist_id);
-
-          if app.is_current_route_playlist_track_table_for(&playlist_id) {
-            let playlist_offset = app.playlist_offset;
-            // Refresh the page the user is looking at. It doesn't make the
-            // rest of the cache current, which is why the mark above stays.
-            app.dispatch(IoEvent::GetPlaylistItems(
-              playlist_id.id().to_string(),
-              playlist_offset,
-            ));
-          }
-
+          let app = self.app.lock().await;
           playlist_name
             .map(|name| app.strings().status.infra.playlist_added_named(&name))
             .unwrap_or_else(|| app.strings().status.infra.playlist_added.to_string())
@@ -2033,6 +2052,7 @@ impl LibraryNetwork for Network {
           // a search or sort walks Spotify again, and reload the open table:
           // every later row moved up one position.
           app.mark_playlist_track_pages_stale(&playlist_id);
+          app.note_track_removed_from_playlist(&playlist_id);
           app.reload_playlist_tracks(playlist_id);
         }
         self

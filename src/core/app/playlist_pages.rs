@@ -230,6 +230,41 @@ impl App {
     }
   }
 
+  /// Keep the in-memory sidebar and the DJ's ownership index in step with a
+  /// confirmed add. Both are loaded once at startup, so without this the
+  /// playlist's track count and `search_tracks`' `owned` flag stay frozen
+  /// until a restart.
+  pub(crate) fn note_tracks_added_to_playlist(
+    &mut self,
+    playlist_id: &PlaylistId<'_>,
+    track_ids: &[String],
+  ) {
+    self.adjust_playlist_track_count(playlist_id, track_ids.len() as i64);
+    if let Some(library) = self.dj.library.as_mut() {
+      library.ids.extend(track_ids.iter().cloned());
+    }
+  }
+
+  /// Counterpart of [`Self::note_tracks_added_to_playlist`] for a confirmed
+  /// remove. The ownership index is left alone: the track may still sit in
+  /// another playlist, and a stale "owned" only errs towards not suggesting it.
+  pub(crate) fn note_track_removed_from_playlist(&mut self, playlist_id: &PlaylistId<'_>) {
+    self.adjust_playlist_track_count(playlist_id, -1);
+  }
+
+  fn adjust_playlist_track_count(&mut self, playlist_id: &PlaylistId<'_>, delta: i64) {
+    let id = playlist_id.id();
+    let adjust = |playlist: &mut PlaylistInfo| {
+      if playlist.id.as_deref() == Some(id) {
+        playlist.track_count = (i64::from(playlist.track_count) + delta).max(0) as u32;
+      }
+    };
+    self.all_playlists_mut().iter_mut().for_each(adjust);
+    if let Some(page) = self.playlists_mut().as_mut() {
+      page.items.iter_mut().for_each(adjust);
+    }
+  }
+
   /// Refetch the open playlist from its first page: a remove moved the
   /// position of every later row. A filtered table keeps the stale mark only.
   pub(crate) fn reload_playlist_tracks(&mut self, playlist_id: PlaylistId<'static>) {
@@ -547,6 +582,62 @@ mod tests {
 
   fn playlist_id(id: &str) -> PlaylistId<'static> {
     PlaylistId::from_id(id).unwrap().into_static()
+  }
+
+  #[test]
+  fn a_confirmed_add_or_remove_keeps_the_sidebar_count_and_ownership_current() {
+    use crate::core::test_helpers::playlist_info;
+    const MINE: &str = "37i9dQZF1DX4WYpdgoIcn6";
+    const OTHER: &str = "37i9dQZF1DXcBWIGoYBM5M";
+    let (tx, _rx) = channel();
+    let mut app = App::new(tx, UserConfig::new(), Some(SystemTime::now()));
+    let sidebar = vec![
+      playlist_info(MINE, "Mine", "me", false),
+      playlist_info(OTHER, "Other", "me", false),
+    ];
+    app.all_playlists_mut().extend(sidebar.clone());
+    *app.playlists_mut() = Some(Paged {
+      items: sidebar,
+      offset: 0,
+      limit: 20,
+      total: 2,
+      next: None,
+      previous: None,
+    });
+    app.dj.library = Some(crate::infra::dj::DjLibrary::default());
+
+    let tracks = ["4uLU6hMCjMI75M1A2tKUQC".to_string(), "track2".to_string()];
+    app.note_tracks_added_to_playlist(&playlist_id(MINE), &tracks);
+
+    let count = |app: &App, id: &str| {
+      let listed = app
+        .all_playlists()
+        .iter()
+        .find(|p| p.id.as_deref() == Some(id));
+      let paged = app
+        .playlists()
+        .as_ref()
+        .and_then(|page| page.items.iter().find(|p| p.id.as_deref() == Some(id)));
+      (listed.unwrap().track_count, paged.unwrap().track_count)
+    };
+    // `playlist_info` starts every playlist at 5 tracks.
+    assert_eq!(count(&app, MINE), (7, 7));
+    assert_eq!(count(&app, OTHER), (5, 5), "only the target playlist moves");
+    let ids = &app.dj.library.as_ref().unwrap().ids;
+    assert!(tracks.iter().all(|id| ids.contains(id)));
+
+    app.note_track_removed_from_playlist(&playlist_id(MINE));
+    assert_eq!(count(&app, MINE), (6, 6));
+  }
+
+  #[test]
+  fn an_add_before_the_ownership_crawl_leaves_the_index_cold() {
+    // A cold index must stay `None`: filling it with one add would make
+    // `search_tracks` report a complete answer from a single playlist.
+    let (tx, _rx) = channel();
+    let mut app = App::new(tx, UserConfig::new(), Some(SystemTime::now()));
+    app.note_tracks_added_to_playlist(&playlist_id("37i9dQZF1DX4WYpdgoIcn6"), &["x".into()]);
+    assert!(app.dj.library.is_none());
   }
 
   fn track_info(id: &str, name: &str) -> TrackInfo {
