@@ -138,7 +138,7 @@ jobs:
 
       - name: Upload artifact (Unix)
         if: runner.os != 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.BINARY_NAME }}-${{ matrix.artifact_prefix }}
           path: |
@@ -147,14 +147,14 @@ jobs:
 
       - name: Upload artifact (Linux .deb)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.BINARY_NAME }}-${{ matrix.artifact_prefix }}-deb
           path: "*.deb"
 
       - name: Upload artifact (Windows)
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ env.BINARY_NAME }}-${{ matrix.artifact_prefix }}
           path: |
@@ -735,7 +735,7 @@ jobs:
     if: ${{ !contains(github.ref_name, '-') }}
     steps:
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@851112458b5f28a29e5bc14a690c3f283d9dcc6f # v1.26.2
+        uses: cargo-bins/cargo-binstall@5885714d0a40a14b2535c6ffc051fd8e49aa9665 # v1.27.0
         env:
           GITHUB_TOKEN: ${{ github.token }}
 

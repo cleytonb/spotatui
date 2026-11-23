@@ -252,10 +252,16 @@ impl App {
 
   /// Sort one list surface by a field, like the sort menu's Enter.
   pub(crate) fn apply_sort_field(&mut self, context: SortContext, field: SortField) {
-    self.sort_state_mut(context).apply_field(field);
+    if context == SortContext::SidebarPlaylists && !context.available_fields().contains(&field) {
+      return;
+    }
+    let mut state = self.sort_state(context);
+    state.apply_field(field);
+    self.set_sort_state(context, state);
 
     // Actually sort the data
     match context {
+      SortContext::SidebarPlaylists => {}
       SortContext::PlaylistTracks => {
         if let Some(playlist_id) = self.current_playlist_track_table_id() {
           if self.try_sort_playlist_tracks_from_cached_pages(&playlist_id) {
@@ -276,25 +282,39 @@ impl App {
   /// Flip the recorded direction without re-sorting loaded rows (the sort
   /// menu's uppercase shortcut, quirk kept).
   pub(crate) fn toggle_sort_order(&mut self, context: SortContext) {
-    let sort_state = self.sort_state_mut(context);
-    sort_state.order = sort_state.order.toggle();
+    // The sidebar offers three fixed orders, without descending variants.
+    if context == SortContext::SidebarPlaylists {
+      return;
+    }
+    let mut state = self.sort_state(context);
+    state.order = state.order.toggle();
+    self.set_sort_state(context, state);
   }
 
-  pub(crate) fn sort_state(&self, context: SortContext) -> &SortState {
+  pub(crate) fn sort_state(&self, context: SortContext) -> SortState {
     match context {
-      SortContext::PlaylistTracks => &self.playlist_sort,
-      SortContext::SavedAlbums => &self.album_sort,
-      SortContext::SavedArtists => &self.artist_sort,
-      SortContext::RecentlyPlayed => &self.recently_played_sort,
+      SortContext::SidebarPlaylists => SortState {
+        field: self.runtime_state.playlist_sidebar_order.field(),
+        order: crate::core::sort::SortOrder::Ascending,
+      },
+      SortContext::PlaylistTracks => self.playlist_sort,
+      SortContext::SavedAlbums => self.album_sort,
+      SortContext::SavedArtists => self.artist_sort,
+      SortContext::RecentlyPlayed => self.recently_played_sort,
     }
   }
 
-  fn sort_state_mut(&mut self, context: SortContext) -> &mut SortState {
+  fn set_sort_state(&mut self, context: SortContext, state: SortState) {
     match context {
-      SortContext::PlaylistTracks => &mut self.playlist_sort,
-      SortContext::SavedAlbums => &mut self.album_sort,
-      SortContext::SavedArtists => &mut self.artist_sort,
-      SortContext::RecentlyPlayed => &mut self.recently_played_sort,
+      SortContext::SidebarPlaylists => {
+        if let Some(order) = SidebarPlaylistOrder::from_field(state.field) {
+          self.set_playlist_sidebar_order(order);
+        }
+      }
+      SortContext::PlaylistTracks => self.playlist_sort = state,
+      SortContext::SavedAlbums => self.album_sort = state,
+      SortContext::SavedArtists => self.artist_sort = state,
+      SortContext::RecentlyPlayed => self.recently_played_sort = state,
     }
   }
 
@@ -798,6 +818,8 @@ impl App {
       }
       None => albums.add_pages(page),
     }
+    // Open in the order `default_sort_saved_albums` set, like Saved Artists.
+    self.sort_saved_albums();
   }
 
   /// Show a fetched saved-shows page and mark its shows as saved; `first`
@@ -1288,6 +1310,23 @@ mod tests {
 
     app.apply_sort_field(SortContext::SavedAlbums, SortField::Default);
     assert_eq!(saved_album_ids(&app), ["zebra", "apple", "mango"]);
+  }
+
+  #[test]
+  fn stored_saved_albums_page_follows_the_default_sort() {
+    let (tx, _rx) = channel();
+    let mut config = UserConfig::new();
+    config.behavior.default_sort_saved_albums = "name".to_string();
+    let mut app = App::new(tx, config, Some(SystemTime::now()));
+    let mut page = saved_album_page(0, &["zebra", "apple", "mango"], false);
+    let names = ["Zebra", "Apple", "Mango"];
+    for (item, name) in page.items.iter_mut().zip(names) {
+      item.album.name = name.to_string();
+    }
+
+    app.store_saved_albums_page(page, true);
+
+    assert_eq!(saved_album_ids(&app), ["apple", "mango", "zebra"]);
   }
 
   #[test]

@@ -15,7 +15,7 @@ Machine-managed runtime state lives separately in `$XDG_STATE_HOME/spotatui/stat
 
 ## Safe by default
 
-Most invalid values log a warning and fall back to the default. A misspelled key is usually ignored. Structural mistakes (an unknown sort field, a bad template placeholder, an invalid column id, an icon that is too wide) are logged as warnings and the affected value falls back to its built-in default. Warnings go to the log file whose path is printed at startup, a `spotatui_logs/spotatuilog<pid>` file inside your system temp directory (`%TEMP%` on Windows, `$TMPDIR` where set, otherwise `/tmp`). The startup line reports the resolved path, so copy it from there rather than guessing.
+Most invalid values log a warning and fall back to the default. A misspelled key is usually ignored. Structural mistakes (an unknown sort field, a bad template placeholder, an invalid column id, an icon that is too wide) are logged as warnings and the affected value falls back to its built-in default. Warnings go to the log file whose path is printed at startup, a `spotatui_logs/spotatui_<timestamp>.log` file inside your system temp directory (`%TEMP%` on Windows, `$TMPDIR` where set, otherwise `/tmp`). The startup line reports the resolved path, so copy it from there rather than guessing.
 
 Fatal errors include YAML syntax errors (the file cannot be parsed at all), and a handful of out-of-range numeric values that bypass the warn-and-fallback policy: `volume_increment` outside 0–100, a tick rate (or animation tick rate) outside 1–999ms, an unparseable `auto_update_delay`, `playback_poll_seconds` below 1, and `like_animation_frames` below 1.
 
@@ -148,7 +148,7 @@ Valid fields per screen:
 | `default_sort_saved_artists` | `default`, `name` |
 | `default_sort_recently_played` | `default`, `name`, `artist`, `album` |
 
-`default` keeps the order the API returns (playlist order, date saved, play order). A field that is not valid for that screen falls back to `default` with a warning.
+`default` keeps the order the API returns (playlist order, date saved, play order). A field that is not valid for that screen falls back to `default` with a warning. So does a direction other than `asc` or `desc`, such as `name:dsc` or `name:DESC`.
 
 ## Local Files
 
@@ -358,9 +358,11 @@ These keys also go under `behavior:`. Defaults below are the built-in values whe
 | `enable_announcements` | `true` | Show one-time announcements from a remote JSON feed. |
 | `announcement_feed_url` | Unset | Override the remote JSON feed URL (HTTPS). |
 | `enable_lyrics` | `true` | Look up lyrics for each track. Spotify tracks try Spotify first, then fall back to LRCLIB if lyrics are unavailable or the request fails; LRCLIB receives the title, artist and length. |
-| `enable_monthly_recap_prompt` | `true` | Show a popup once a month when your listening recap is ready. |
+| `enable_monthly_recap_prompt` | `true` | Show a popup once a month when your listening recap is ready, and once in December for the recap of the year. |
+| `now_playing_panel_on_startup` | `false` | Open the terminal app's now playing panel (cover, details and up next beside the content, the panel `Enter` on the playbar toggles) when spotatui starts. It still hides while searching and when the content is narrower than 90 columns. |
 | `pin_community_playlist` | `true` | Pin the spotatui community playlist to the top of your Spotify playlists. |
 | `visualizer_style` | `Cava` | Visualizer look: `Cava`, `BarGraph`, `HeadUnit`, `AnalogVu`, `Winamp`, `PhosphorScope`, `Outrun`, `RackEq` or `Cassette` (case-sensitive). Older `Classic` and `Equalizer` values are accepted as aliases for `Cava`. |
+| `player_bar_visualizer` | `spectrum` | What the desktop app and the browser GUI draw behind the player bar: `off`, `spectrum` or `waveform`. Linux and Windows only (Linux builds require the `audio-viz` feature). A click on empty space in the bar also changes it. Its look is set in `visualizer.yml` (see the Themes guide). |
 | `stop_after_current_track` | `false` | Pause native Spotify streaming when the current track finishes; does not apply to other sources or remote Connect devices. |
 | `draw_cover_art` | `true` | Enable rendering song/episode cover art; needs a cover-art build. |
 | `cover_art_theme` | `false` | Recolor UI accents from the current cover art, fading on track change. Requires `art-decode`, which `cover-art` includes. |
@@ -545,8 +547,8 @@ Setup, tools, and troubleshooting: [`docs/mcp-setup.md`](mcp-setup.md) and
 
 ## Logging
 
-Every run writes a log file to the OS temp directory, one per process id:
-`$TMPDIR/spotatui_logs/spotatuilog<pid>` (`%TEMP%\spotatui_logs\...` on Windows).
+Every run writes a log file to the OS temp directory:
+`$TMPDIR/spotatui_logs/spotatui_<timestamp>.log` (`%TEMP%\spotatui_logs\...` on Windows).
 spotatui prints the path when it starts and again when it exits, so you never
 have to guess which file belongs to the run you just had.
 
@@ -577,8 +579,19 @@ contain your display name, and a `trace` log can contain your country, because
 Spotify returns it from `GET /v1/me`. Skim the file before you attach it to a
 public issue.
 
-If spotatui panics it writes `spotatui_panic.log` to the state directory
-(`~/.local/state/spotatui/` on Linux) with the panic message, a backtrace, and
-up to the last 200 log lines from the last 64 KiB, and prints that path. That
-single file is usually
-enough for a bug report.
+If spotatui panics it writes `spotatui_panic.log` to the state directory (by
+default `~/.local/state/spotatui/` on Linux,
+`%USERPROFILE%\.local\state\spotatui\` on Windows) with the panic message, a
+backtrace, and up to the last 200 log lines from the last 64 KiB, and prints
+that path. That single file is usually enough for a bug report.
+
+On Windows, starting the console executable `spotatui.exe` by double-clicking or
+from a shortcut closes the window immediately when a panic occurs. To keep the
+console open to read the crash message and log path, set
+`SPOTATUI_PAUSE_ON_PANIC` to print `Press Enter to close...` and wait for input
+(any set value enables it). This only helps console `spotatui.exe` (not GUI
+builds or the desktop app) and has no effect on Linux or macOS:
+
+```powershell
+$env:SPOTATUI_PAUSE_ON_PANIC = '1'; spotatui
+```

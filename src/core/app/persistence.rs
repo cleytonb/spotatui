@@ -243,10 +243,13 @@ impl App {
       }
     }
     #[cfg(feature = "internet-radio")]
-    if self.radio_playback.is_some() {
-      return true;
+    {
+      self.radio_playback.is_some()
     }
-    false
+    #[cfg(not(feature = "internet-radio"))]
+    {
+      false
+    }
   }
 
   /// Schedule a debounced state save. Hot paths (volume, shuffle) call this
@@ -283,6 +286,26 @@ impl App {
       None => crate::core::state::default_state_path()?,
     };
     crate::core::state::save(&path, patch)
+  }
+
+  pub(super) fn save_removed_pinned_playlist(&self, uri: &str) -> anyhow::Result<()> {
+    let path = match &self.state_path {
+      Some(path) => path.clone(),
+      None => crate::core::state::default_state_path()?,
+    };
+    crate::core::state::save_removing_pinned_playlist(&path, uri)
+  }
+
+  pub(super) fn save_pruned_playlist_pins(
+    &self,
+    uris: &[String],
+    account: &str,
+  ) -> anyhow::Result<()> {
+    let path = match &self.state_path {
+      Some(path) => path.clone(),
+      None => crate::core::state::default_state_path()?,
+    };
+    crate::core::state::save_removing_pinned_playlists(&path, uris, Some(account))
   }
 
   fn save_removed_radio_station(&self, url: &str) -> anyhow::Result<()> {

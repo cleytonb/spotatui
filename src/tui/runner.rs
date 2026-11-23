@@ -75,12 +75,31 @@ fn modal_captures_key_before_back(app: &App) -> bool {
   app.plugin_popup.is_some() || app.get_current_route().active_block == ActiveBlock::SortMenu
 }
 
+// Prevents the 'Create Playlist' form from being closed accidentally
+// when the user types 'q'.
+fn create_playlist_captures_key_before_back(app: &App) -> bool {
+  app.get_current_route().active_block == ActiveBlock::CreatePlaylistForm
+}
+
+/// The Friends search box and the add-friend dialog take text: while either is
+/// up, a typed `q` is the letter, not "back". The idle list keeps `q` as back.
+fn friends_captures_key_before_back(app: &App) -> bool {
+  app.get_current_route().active_block == ActiveBlock::Friends
+    && (app.view.friend_add_dialog_visible || !app.view.friend_search_input.is_empty())
+}
+
 /// Blocks that must see the configurable back key *before* the runner acts on it
 /// themselves. Ordering is the whole point, so this is one predicate rather than
 /// two conditions spelled out at the call site: a screen that is missing here has
 /// its route popped instead of receiving the key, however well its own handler
 /// copes with it.
 fn key_reaches_handlers_before_back(app: &App, key: Key) -> bool {
+  if create_playlist_captures_key_before_back(app) {
+    return true;
+  }
+  if friends_captures_key_before_back(app) {
+    return true;
+  }
   if modal_captures_key_before_back(app) {
     return true;
   }
@@ -248,6 +267,7 @@ pub async fn start_ui(
     app.view.terminal_input_caps.keyboard_enhancement_enabled = keyboard_enhancement_enabled;
     app.view.terminal_input_caps.ctrl_punct_reliable = app::CapabilityState::Unknown;
     app.keep_pane_focus_in_layout();
+    app.open_now_playing_panel_on_startup();
   }
   let mut route_depth = app.lock().await.navigation_depth();
 
@@ -904,6 +924,58 @@ mod tests {
 
     assert_eq!(app.soloist_pairing_device(), None);
     assert_eq!(app.get_current_route().active_block, ActiveBlock::Input);
+  }
+
+  #[test]
+  fn typing_q_into_the_new_playlist_name_types_it() {
+    let mut app = app();
+    app.push_navigation_stack(RouteId::CreatePlaylist, ActiveBlock::CreatePlaylistForm);
+    dispatch_key(Key::Char('q'), &mut app);
+
+    assert_eq!(app.view.create_playlist_name, ['q']);
+    assert_eq!(
+      app.get_current_route().active_block,
+      ActiveBlock::CreatePlaylistForm
+    );
+
+    dispatch_key(Key::Esc, &mut app);
+    assert_eq!(app.get_current_route().active_block, ActiveBlock::Empty);
+    assert!(app.view.create_playlist_name.is_empty());
+  }
+
+  #[test]
+  fn typing_q_into_the_friend_search_types_it() {
+    let mut app = app();
+    app.push_navigation_stack(RouteId::Friends, ActiveBlock::Friends);
+    app.view.friend_search_input = vec!['a'];
+
+    dispatch_key(Key::Char('q'), &mut app);
+
+    assert_eq!(app.view.friend_search_input, vec!['a', 'q']);
+    assert_eq!(app.get_current_route().id, RouteId::Friends);
+  }
+
+  #[test]
+  fn typing_q_into_the_add_friend_box_types_it() {
+    let mut app = app();
+    app.push_navigation_stack(RouteId::Friends, ActiveBlock::Friends);
+    app.open_friend_add_dialog();
+
+    dispatch_key(Key::Char('q'), &mut app);
+
+    assert_eq!(app.view.friend_add_input, vec!['q']);
+    assert!(app.view.friend_add_dialog_visible);
+    assert_eq!(app.get_current_route().id, RouteId::Friends);
+  }
+
+  #[test]
+  fn q_on_the_idle_friends_list_goes_back() {
+    let mut app = app();
+    app.push_navigation_stack(RouteId::Friends, ActiveBlock::Friends);
+
+    dispatch_key(Key::Char('q'), &mut app);
+
+    assert_ne!(app.get_current_route().id, RouteId::Friends);
   }
 }
 

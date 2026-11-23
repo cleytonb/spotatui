@@ -8,7 +8,10 @@ use crate::core::plugin_api::{
   ArtistInfo, EpisodeInfo, PlayableInfo, PlaylistInfo, SavedAlbumInfo, ShowInfo, TrackInfo,
 };
 use crate::core::requirement::{availability, Availability, Capability, Requirement};
-use crate::core::sort::{SortContext, SortField, SortState};
+use crate::core::sort::{
+  pinned_first, present_pins, sort_playlist_slots, PlaylistLastListens, SidebarPlaylistOrder,
+  SortContext, SortField, SortState,
+};
 use crate::core::source::Source;
 use crate::core::state::{
   PersistedRuntimeState, RadioStationAddOutcome, RadioStationConfig, RuntimeState,
@@ -534,6 +537,8 @@ pub struct App {
   _playlist_folder_nodes: Option<Vec<PlaylistFolderNode>>,
   /// Flattened folder+playlist items for display navigation
   playlist_folder_items: Vec<PlaylistFolderItem>,
+  /// Latest local listen per playlist context, maintained by the history collector.
+  playlist_last_listens: PlaylistLastListens,
   /// Backing storage for the injected community-playlist pin so display methods
   /// can hand out a `&PlaylistFolderItem`. Never stored in
   /// `playlist_folder_items`.
@@ -741,15 +746,21 @@ impl App {
   }
 
   pub fn dispatch(&mut self, action: IoEvent) {
+    self.try_dispatch(action);
+  }
+
+  fn try_dispatch(&mut self, action: IoEvent) -> bool {
     // `is_loading` will be set to false again after the async action has finished in network.rs
     self.is_loading = true;
-    if let Some(io_tx) = &self.io_tx {
-      if let Err(e) = io_tx.send(action) {
-        self.is_loading = false;
-        log::error!("Error from dispatch {}", e);
-        // TODO: handle error
-      };
+    let Some(io_tx) = &self.io_tx else {
+      return false;
+    };
+    if let Err(e) = io_tx.send(action) {
+      self.is_loading = false;
+      log::error!("Error from dispatch {}", e);
+      return false;
     }
+    true
   }
 
   /// [`Self::dispatch`] without setting `is_loading`.

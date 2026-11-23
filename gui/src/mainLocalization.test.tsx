@@ -31,6 +31,8 @@ const episode: EpisodeInfo = {
   resume_point: { fully_played: false, resume_position_ms: 60000 },
 };
 const lists: SourcePlaylists = {
+  playlist_sidebar_order: "spotify",
+  pinned: [],
   spotify: [],
   local: [],
   subsonic: [],

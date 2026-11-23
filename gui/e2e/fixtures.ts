@@ -286,6 +286,8 @@ export const library: ServerMessage[] = [
     kind: "library",
     rev: 1,
     payload: {
+      playlist_sidebar_order: "spotify",
+      pinned: [],
       spotify: [
         playlist("Film scores", "spotify:playlist:1", 142),
         playlist("Kygo & friends", "spotify:playlist:2", 87),
@@ -343,6 +345,8 @@ export const libraryUnavailable: ServerMessage[] = [
     kind: "library",
     rev: 1,
     payload: {
+      playlist_sidebar_order: "spotify",
+      pinned: [],
       spotify: [],
       local: [],
       subsonic: [],
@@ -1288,6 +1292,23 @@ export const libraryFolders: ServerMessage[] = withLibrary({
     { kind: "playlist", uri: "spotify:playlist:5" },
   ],
 });
+
+/** A pin lifted out of its folder by the server; its folder copy stays in place. */
+export const libraryPinned: ServerMessage[] = libraryFolders.map((message) =>
+  message.kind === "library"
+    ? {
+        ...message,
+        payload: {
+          ...message.payload,
+          pinned: ["spotify:playlist:1"],
+          folders: [
+            { kind: "playlist", uri: "spotify:playlist:1" },
+            ...(message.payload.folders ?? []),
+          ],
+        },
+      }
+    : message,
+);
 
 function podcastShow(
   id: string,

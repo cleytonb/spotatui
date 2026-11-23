@@ -373,6 +373,21 @@ fn every_typed_message_fills_its_placeholders_and_preserves_all_arguments() {
       ["9101"]
     );
     check!(
+      "popups.recap_year_ready",
+      strings.popups.recap_year_ready(9103),
+      ["9103"]
+    );
+    check!(
+      "popups.recap_year_listens",
+      strings.popups.recap_year_listens(9104, 9105),
+      ["9104", "9105"]
+    );
+    check!(
+      "popups.recap_year_title",
+      strings.popups.recap_year_title(9106),
+      ["9106"]
+    );
+    check!(
       "popups.party_code_length",
       strings.popups.party_code_length(9101),
       ["9101"]
@@ -812,6 +827,21 @@ fn every_typed_message_fills_its_placeholders_and_preserves_all_arguments() {
       "status_app.audio_backend_failed",
       strings.status.app.audio_backend_failed("SENTINEL_ERROR_中"),
       ["SENTINEL_ERROR_中"]
+    );
+    check!(
+      "status_app.playlist_pinned",
+      strings.status.app.playlist_pinned("SENTINEL_NAME_中"),
+      ["SENTINEL_NAME_中"]
+    );
+    check!(
+      "status_app.playlist_unpinned",
+      strings.status.app.playlist_unpinned("SENTINEL_NAME_中"),
+      ["SENTINEL_NAME_中"]
+    );
+    check!(
+      "status_app.playlist_pin_limit",
+      strings.status.app.playlist_pin_limit(9101),
+      ["9101"]
     );
     check!(
       "status_app.friend_code_copied",
@@ -1663,6 +1693,14 @@ fn every_typed_message_fills_its_placeholders_and_preserves_all_arguments() {
       ["SENTINEL_BACKEND_中", "SENTINEL_ERROR_中"]
     );
     check!(
+      "status_infra.dj_auto_queue_stopped",
+      strings
+        .status
+        .infra
+        .dj_auto_queue_stopped(9101, "SENTINEL_REASON_中"),
+      ["9101", "SENTINEL_REASON_中"]
+    );
+    check!(
       "status_infra.dj_steps_exhausted",
       strings.status.infra.dj_steps_exhausted(9101),
       ["9101"]
@@ -1741,6 +1779,14 @@ fn every_typed_message_fills_its_placeholders_and_preserves_all_arguments() {
         .infra
         .monthly_recap_ready("SENTINEL_PATH_中", 9102),
       ["SENTINEL_PATH_中", "9102"]
+    );
+    check!(
+      "status_infra.year_recap_ready",
+      strings
+        .status
+        .infra
+        .year_recap_ready(9107, "SENTINEL_PATH_中", 9108),
+      ["9107", "SENTINEL_PATH_中", "9108"]
     );
     check!(
       "status_runtime.song_counter_save_failed",
@@ -1889,6 +1935,27 @@ fn every_typed_message_fills_its_placeholders_and_preserves_all_arguments() {
       ["SENTINEL_ERROR_中"]
     );
     check!(
+      "tools.queue_filter_failed",
+      strings
+        .status
+        .tools
+        .queue_filter_failed("SENTINEL_ERROR_中"),
+      ["SENTINEL_ERROR_中"]
+    );
+    check!(
+      "tools.queue_streaming_unavailable",
+      strings
+        .status
+        .tools
+        .queue_streaming_unavailable("SENTINEL_NAMES_中"),
+      ["SENTINEL_NAMES_中"]
+    );
+    check!(
+      "tools.queue_refused",
+      strings.status.tools.queue_refused("SENTINEL_NAMES_中"),
+      ["SENTINEL_NAMES_中"]
+    );
+    check!(
       "tools.no_tracks",
       strings.status.tools.no_tracks("SENTINEL_QUERY_中"),
       ["SENTINEL_QUERY_中"]
@@ -2024,6 +2091,29 @@ fn every_typed_message_fills_its_placeholders_and_preserves_all_arguments() {
     covered, declared,
     "add a sentinel call for each typed template helper"
   );
+}
+
+#[test]
+fn dj_shutdown_messages_keep_existing_terminal_punctuation() {
+  for (strings, reason, expected) in [
+    (
+      &EN,
+      "usage limit reached! \n",
+      "DJ auto-queue stopped after 5 failed refills. usage limit reached! Re-enable auto-queue to try again.",
+    ),
+    (
+      &ZH_HANS,
+      "usage limit reached！ \n",
+      "DJ 自动补充队列连续 5 次失败，已关闭。usage limit reached！请重新开启自动补充队列以重试。",
+    ),
+    (
+      &ZH_HANT,
+      "usage limit reached！ \n",
+      "DJ 自動補充佇列連續 5 次失敗，已關閉。usage limit reached！請重新開啟自動補充佇列以重試。",
+    ),
+  ] {
+    assert_eq!(strings.status.infra.dj_auto_queue_stopped(5, reason), expected);
+  }
 }
 
 #[test]

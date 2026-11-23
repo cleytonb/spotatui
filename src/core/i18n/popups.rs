@@ -61,6 +61,12 @@ pub struct PopupStrings {
   pub recap_browser: &'static str,
   pub recap_controls: &'static str,
   pub recap_title: &'static str,
+  pub recap_year_ready: &'static str,
+  pub recap_year_listens_template: &'static str,
+  pub recap_year_title: &'static str,
+  pub recap_open: &'static str,
+  pub recap_later: &'static str,
+  pub recap_disable: &'static str,
   pub community_pinned: &'static str,
   pub community_details: &'static str,
   pub community_add: &'static str,
@@ -71,6 +77,9 @@ pub struct PopupStrings {
   pub exit_yes_no: &'static str,
   pub exit_controls: &'static str,
   pub exit_title: &'static str,
+  pub sort_playlists: &'static str,
+  pub sort_spotify: &'static str,
+  pub sort_recently_played: &'static str,
   pub sort_tracks: &'static str,
   pub sort_albums: &'static str,
   pub sort_artists: &'static str,
@@ -199,6 +208,12 @@ pub const EN: PopupStrings = PopupStrings {
   recap_browser: "Open it in the browser to view and download your share card.",
   recap_controls: "[ENTER] Open   [ESC] Later   [d] Don't show this again",
   recap_title: " Monthly Recap ",
+  recap_year_ready: "Your {year} listening recap is ready! 🎉",
+  recap_year_listens_template: "{count} listens made it into your {year} recap.",
+  recap_year_title: " {year} Recap ",
+  recap_open: "Open",
+  recap_later: "Later",
+  recap_disable: "Don't show this again",
   community_pinned: "📌 spotatui community playlist pinned",
   community_details: "The \"spotatui community\" playlist is now pinned to the top of your Spotify playlists.",
   community_add: "Add songs to it any time with the /queue command in the spotatui Discord.",
@@ -209,6 +224,9 @@ pub const EN: PopupStrings = PopupStrings {
   exit_yes_no: "Press Y for Yes or N for No",
   exit_controls: "[ENTER = Yes, ESC = No]",
   exit_title: " Confirm Exit ",
+  sort_playlists: "Sort Playlists",
+  sort_spotify: "Spotify",
+  sort_recently_played: "Recently played",
   sort_tracks: "Sort Tracks",
   sort_albums: "Sort Albums",
   sort_artists: "Sort Artists",
@@ -229,17 +247,17 @@ pub const EN: PopupStrings = PopupStrings {
   party_code_then_name: "Code fills first, then name input",
   esc_cancel: "Esc to cancel",
   listening_party: "Listening Party",
-  connecting: "Connecting...",
+  connecting: "Connecting…",
   host_party: "Host a Party",
   join_party: "Join a Party",
   esc_close: "Esc to close",
   party_hosting: "Hosting Listening Party",
-  generating: "Generating...",
+  generating: "Generating…",
   share_code: "Share this code: ",
   control_label: "Control: ",
   control_host_only: "Host Only",
   control_shared: "Shared Control",
-  waiting_guests: "Waiting for guests...",
+  waiting_guests: "Waiting for guests…",
   listener_one: "1 listener:",
   listeners_template: "{count} listeners:",
   party_toggle_control: "c - toggle control mode",
@@ -340,6 +358,12 @@ pub const ZH_HANS: PopupStrings = PopupStrings {
   recap_browser: "在浏览器中打开，可查看并下载分享卡片。",
   recap_controls: "[ENTER] 打开   [ESC] 稍后   [d] 不再提示",
   recap_title: " 月度回顾 ",
+  recap_year_ready: "你的 {year} 年度听歌回顾已生成！🎉",
+  recap_year_listens_template: "你的 {year} 年回顾收录了 {count} 次播放。",
+  recap_year_title: " {year} 年度回顾 ",
+  recap_open: "打开",
+  recap_later: "稍后",
+  recap_disable: "不再提示",
   community_pinned: "📌 spotatui 社区播放列表已置顶",
   community_details: "“spotatui community”播放列表已置顶于你的 Spotify 播放列表。",
   community_add: "随时可在 spotatui Discord 中使用 /queue 命令添加歌曲。",
@@ -350,6 +374,9 @@ pub const ZH_HANS: PopupStrings = PopupStrings {
   exit_yes_no: "按 Y 确认，按 N 取消",
   exit_controls: "[ENTER = 确认，ESC = 取消]",
   exit_title: " 确认退出 ",
+  sort_playlists: "歌单排序",
+  sort_spotify: "Spotify",
+  sort_recently_played: "最近播放",
   sort_tracks: "曲目排序",
   sort_albums: "专辑排序",
   sort_artists: "艺人排序",
@@ -482,6 +509,12 @@ pub const ZH_HANT: PopupStrings = PopupStrings {
   recap_browser: "在瀏覽器中開啟，可查看並下載分享卡片。",
   recap_controls: "[ENTER] 開啟   [ESC] 稍後   [d] 不再提示",
   recap_title: " 每月回顧 ",
+  recap_year_ready: "你的 {year} 年度聆聽回顧已產生！🎉",
+  recap_year_listens_template: "你的 {year} 年回顧收錄了 {count} 次播放。",
+  recap_year_title: " {year} 年度回顧 ",
+  recap_open: "開啟",
+  recap_later: "稍後",
+  recap_disable: "不再提示",
   community_pinned: "📌 spotatui 社群播放清單已置頂",
   community_details: "「spotatui community」播放清單已置頂於你的 Spotify 播放清單。",
   community_add: "隨時可在 spotatui Discord 中使用 /queue 指令加入歌曲。",
@@ -492,6 +525,9 @@ pub const ZH_HANT: PopupStrings = PopupStrings {
   exit_yes_no: "按 Y 確認，按 N 取消",
   exit_controls: "[ENTER = 確認，ESC = 取消]",
   exit_title: " 確認結束 ",
+  sort_playlists: "播放清單排序",
+  sort_spotify: "Spotify",
+  sort_recently_played: "最近播放",
   sort_tracks: "曲目排序",
   sort_albums: "專輯排序",
   sort_artists: "藝人排序",
@@ -567,6 +603,44 @@ impl PopupStrings {
   pub fn soloist_pair_pick(&self, name: &str) -> String {
     super::format_template(self.soloist_pair_pick_template, &[("name", name)])
   }
+
+  pub fn recap_listens(&self, count: usize) -> String {
+    super::format_template(
+      self.recap_listens_template,
+      &[("count", &count.to_string())],
+    )
+  }
+
+  pub fn recap_year_ready(&self, year: i32) -> String {
+    super::format_template(self.recap_year_ready, &[("year", &year.to_string())])
+  }
+
+  pub fn recap_year_listens(&self, year: i32, count: usize) -> String {
+    super::format_template(
+      self.recap_year_listens_template,
+      &[("year", &year.to_string()), ("count", &count.to_string())],
+    )
+  }
+
+  pub fn recap_year_title(&self, year: i32) -> String {
+    super::format_template(self.recap_year_title, &[("year", &year.to_string())])
+  }
+
+  /// The title, the ready line and the listens line of the monthly or the year recap popup.
+  pub fn recap_lines(&self, year: Option<i32>, listens: usize) -> (String, String, String) {
+    match year {
+      Some(year) => (
+        self.recap_year_title(year),
+        self.recap_year_ready(year),
+        self.recap_year_listens(year, listens),
+      ),
+      None => (
+        self.recap_title.to_string(),
+        self.recap_ready.to_string(),
+        self.recap_listens(listens),
+      ),
+    }
+  }
 }
 
 #[cfg(any(feature = "tui", test))]
@@ -637,13 +711,6 @@ impl PopupStrings {
     super::format_template(self.announcement_more_template, &[("url", url)])
   }
 
-  pub fn recap_listens(&self, count: usize) -> String {
-    super::format_template(
-      self.recap_listens_template,
-      &[("count", &count.to_string())],
-    )
-  }
-
   pub fn party_code_length(&self, count: usize) -> String {
     super::format_template(
       self.party_code_length_template,
@@ -683,6 +750,7 @@ impl PopupStrings {
       SortField::Duration => self.sort_duration,
       SortField::Album => self.sort_album,
       SortField::ReleaseDate => self.sort_release_date,
+      SortField::RecentlyPlayed => self.sort_recently_played,
     }
   }
 }

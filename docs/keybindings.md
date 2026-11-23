@@ -51,7 +51,7 @@ key and its default from `UserConfig::new`. The five AI DJ keys live in the
 | Toggle shuffle | `Ctrl-s` | `shuffle` |
 | Toggle repeat mode | `Ctrl-r` | `repeat` |
 | Search | `/` | `search` |
-| Confirm (not wired yet — rebinding it has no effect today) | `Enter` | `submit` |
+| Seek to the selected line in the lyrics view (Enter works there too; elsewhere Enter is fixed) | `Enter` | `submit` |
 | Copy song URL | `c` | `copy_song_url` |
 | Copy album URL | `C` | `copy_album_url` |
 | Audio visualization | `v` | `audio_analysis` |
@@ -65,7 +65,20 @@ key and its default from `UserConfig::new`. The five AI DJ keys live in the
 | Save settings | `Alt-s` | `save_settings` |
 | Listening party | `Ctrl-p` | `listening_party` |
 | Like / save track | `F` | `like_track` |
+| Pin / unpin a Spotify sidebar playlist | `t` | `pin_playlist` |
 | Generate recap | `R` | `generate_recap` |
+
+Change the pin key in **Settings → Keybindings → Pin / Unpin Playlist** or with
+`keybindings.pin_playlist` in `config.yml`. Settings refuses a key already used
+by another listed action. If the config file gives pinning the same key as
+navigation or another sidebar action, navigation and the existing action keep
+priority: this includes entering a playlist, sorting (`,`), deleting (`D`),
+mirroring (`m`), and the `H` / `M` / `L` list jumps. Choose a different pin key
+to use both actions.
+
+Like other named actions, `pin_playlist` reserves its configured key against
+`plugin_commands`. A plugin command on `t` is skipped with a warning while `t`
+is the pin key; rebind either action to avoid the collision.
 
 ### Now playing panel
 

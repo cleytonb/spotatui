@@ -12,7 +12,7 @@ use ratatui::{
 use ratatui_image::{
   picker::{cap_parser::QueryStdioOptions, Capability, Picker, ProtocolType},
   protocol::StatefulProtocol,
-  Resize, StatefulImage,
+  FontSize, Resize, StatefulImage,
 };
 use std::cell::Cell;
 use std::sync::{mpsc, Arc, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -50,29 +50,93 @@ pub fn init_renderer() {
     if iterm2 {
       options.blacklist_protocols = vec![ProtocolType::Kitty, ProtocolType::Sixel];
     }
-    let picker = match Picker::from_query_stdio_with_options(options) {
+    let (picker, measured_cell) = match Picker::from_query_stdio_with_options(options) {
       Ok(mut picker) => {
         let measured = picker
           .capabilities()
           .iter()
           .any(|cap| matches!(cap, Capability::CellSize(Some(_))));
-        if iterm2 && measured {
+        let device_cell = (iterm2 && !picker.tmux_detected())
+          .then(iterm2_device_cell_size)
+          .flatten();
+        if let Some(cell) = device_cell {
+          #[allow(deprecated)]
+          let sized = Picker::from_fontsize(cell);
+          picker = sized;
+          picker.set_protocol_type(ProtocolType::Iterm2);
+        } else if iterm2 && measured {
           picker.set_protocol_type(ProtocolType::Iterm2);
         }
-        picker
+        (picker, measured || device_cell.is_some())
       }
       Err(err) => {
         warn!("cover art renderer fallback to halfblocks: {err}");
-        Picker::halfblocks()
+        (Picker::halfblocks(), false)
       }
     };
 
+    let cell = picker.font_size();
     info!(
-      "cover art renderer detected a {:?} backend",
-      picker.protocol_type()
+      "cover art renderer detected a {:?} backend, cell {}x{} px",
+      picker.protocol_type(),
+      cell.width,
+      cell.height
     );
-    CoverArtRenderer::new(picker)
+    let renderer = CoverArtRenderer::new(picker);
+    if measured_cell {
+      renderer.with_measured_cell_ratio()
+    } else {
+      renderer
+    }
   });
+}
+
+/// iTerm2 reports cells in points but draws one inline image pixel per device pixel.
+fn iterm2_device_cell_size() -> Option<FontSize> {
+  use std::io::{Read, Write};
+  let mut stdout = std::io::stdout();
+  stdout
+    .write_all(b"\x1b]1337;ReportCellSize\x07\x1b[5n")
+    .ok()?;
+  stdout.flush().ok()?;
+  let (sender, receiver) = mpsc::channel();
+  std::thread::spawn(move || {
+    let mut reply = Vec::new();
+    let mut chunk = [0_u8; 64];
+    while let Ok(read @ 1..) = std::io::stdin().read(&mut chunk) {
+      reply.extend_from_slice(&chunk[..read]);
+      let done = reply.windows(4).any(|window| window == b"\x1b[0n");
+      // A failed send means the wait timed out: stop before more keys are read.
+      if sender.send(done.then(|| reply.clone())).is_err() || done {
+        break;
+      }
+    }
+  });
+  let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+  let reply = loop {
+    let left = deadline.checked_duration_since(std::time::Instant::now())?;
+    if let Some(reply) = receiver.recv_timeout(left).ok()? {
+      break reply;
+    }
+  };
+  parse_report_cell_size(&String::from_utf8_lossy(&reply))
+}
+
+/// The device-pixel cell from `ReportCellSize=height;width[;scale]`, whose sizes are in points.
+fn parse_report_cell_size(reply: &str) -> Option<FontSize> {
+  let fields = reply.split("ReportCellSize=").nth(1)?;
+  let fields = fields.split(['\x07', '\x1b']).next()?;
+  let mut values = fields.split(';').map(|value| value.parse::<f64>().ok());
+  let height = values.next()??;
+  let width = values.next()??;
+  let scale = values.next().flatten().unwrap_or(1.0);
+  let pixels = |points: f64| {
+    let pixels = (points * scale).round();
+    (1.0..=f64::from(u16::MAX))
+      .contains(&pixels)
+      .then_some(pixels as u16)
+  };
+  Some(FontSize::new(pixels(width)?, pixels(height)?))
 }
 
 /// iTerm2 answers the Kitty query but cannot draw Kitty placeholders, so skip Kitty and Sixel.
@@ -116,6 +180,13 @@ pub fn full_image_support() -> bool {
   RENDERER
     .get()
     .is_some_and(CoverArtRenderer::full_image_support)
+}
+
+/// Height-to-width ratio of one terminal cell, from the cell size measured at
+/// startup. `None` for the halfblocks fallback or when the terminal did not
+/// report its cell size; callers then fall back to their own estimate.
+pub fn cell_ratio() -> Option<f32> {
+  RENDERER.get().and_then(|renderer| renderer.cell_ratio)
 }
 
 /// Drop cached protocols that no longer match the store, so cleared art
@@ -259,6 +330,8 @@ pub fn plugin_size_for(area: Rect, fit: PluginCoverArtFit, store: &CoverArtStore
 struct CoverArtRenderer {
   picker: Picker,
   terminal_background: Option<[u8; 3]>,
+  /// Measured cell height / width; see [`cell_ratio`].
+  cell_ratio: Option<f32>,
   /// Playbar protocol state.
   playbar: Mutex<Option<Surface>>,
   /// The Mini player pane's playbar, drawn in the same frame as the main playbar.
@@ -428,12 +501,23 @@ impl CoverArtRenderer {
     Self {
       picker,
       terminal_background,
+      cell_ratio: None,
       playbar: Mutex::new(None),
       pane_playbar: Mutex::new(None),
       fullscreen: Mutex::new(None),
       now_playing: Mutex::new(None),
       plugin: Mutex::new(None),
     }
+  }
+
+  /// Record the picker's cell size as measured. Only image protocols draw
+  /// whole pixels per cell, so halfblocks keeps `None`.
+  fn with_measured_cell_ratio(mut self) -> Self {
+    let font = self.picker.font_size();
+    if self.full_image_support() && font.width > 0 && font.height > 0 {
+      self.cell_ratio = Some(f32::from(font.height) / f32::from(font.width));
+    }
+    self
   }
 
   fn playbar_surface(&self) -> &Mutex<Option<Surface>> {
@@ -675,6 +759,28 @@ mod tests {
     assert!(!is_iterm2(Some("ghostty"), None, None));
     assert!(!is_iterm2(Some("tmux"), None, None));
     assert!(!is_iterm2(None, None, None));
+  }
+
+  fn cell(reply: &str) -> Option<(u16, u16)> {
+    parse_report_cell_size(reply).map(|size| (size.width, size.height))
+  }
+
+  #[test]
+  fn iterm2_cell_points_are_scaled_to_device_pixels() {
+    let reply = "\x1b]1337;ReportCellSize=17.0;8.0;2.0\x1b\\\x1b[0n";
+    assert_eq!(cell(reply), Some((16, 34)));
+  }
+
+  #[test]
+  fn an_iterm2_reply_without_a_scale_keeps_the_points() {
+    let reply = "\x1b]1337;ReportCellSize=17.5;8.25\x07\x1b[0n";
+    assert_eq!(cell(reply), Some((8, 18)));
+  }
+
+  #[test]
+  fn a_terminal_without_report_cell_size_gives_no_cell() {
+    assert_eq!(cell("\x1b[0n"), None);
+    assert_eq!(cell("\x1b]1337;ReportCellSize=0;0;2\x07"), None);
   }
 
   #[test]

@@ -237,7 +237,13 @@ pub fn draw_playlist_block(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
         crate::core::app::PlaylistFolderItem::Playlist { index, .. } => app
           .all_playlists()
           .get(*index)
-          .map(|p| p.name.clone())
+          .map(|p| {
+            if app.is_playlist_pinned(&p.uri) {
+              format!("📌 {}", p.name)
+            } else {
+              p.name.clone()
+            }
+          })
           .unwrap_or_else(|| strings.unknown.to_string()),
         crate::core::app::PlaylistFolderItem::CommunityPin => community_pin_label(app),
       })
@@ -252,11 +258,19 @@ pub fn draw_playlist_block(f: &mut Frame<'_>, app: &App, layout_chunk: Rect) {
     display_list.push(strings.empty_spotify(&app.user_config.keys.manage_devices.to_string()));
   }
 
+  let order = match app.runtime_state.playlist_sidebar_order {
+    crate::core::sort::SidebarPlaylistOrder::Spotify => app.strings().popups.sort_spotify,
+    crate::core::sort::SidebarPlaylistOrder::RecentlyPlayed => {
+      app.strings().popups.sort_recently_played
+    }
+    crate::core::sort::SidebarPlaylistOrder::Name => app.strings().popups.sort_name,
+  };
+  let title = format!("{} · {}", strings.playlists, order);
   draw_selectable_list(
     f,
     app,
     layout_chunk,
-    strings.playlists,
+    &title,
     &display_list,
     highlight_state,
     app.view.selected_playlist_index,
@@ -301,6 +315,45 @@ mod tests {
       .flat_map(|y| (0..area.width).map(move |x| (x, y)))
       .filter_map(|(x, y)| buffer.cell((x, y)).map(|c| c.symbol().to_string()))
       .collect()
+  }
+
+  #[test]
+  fn sidebar_playlist_title_shows_each_order_in_all_three_languages() {
+    use crate::core::action::Action;
+    use crate::core::i18n::Language;
+    use crate::core::sort::{SortContext, SortField};
+    let mut app = App::default_connected();
+    for language in [Language::En, Language::ZhHans, Language::ZhHant] {
+      app.user_config.behavior.language = language;
+      app.refresh_language();
+      for field in [
+        SortField::Default,
+        SortField::RecentlyPlayed,
+        SortField::Name,
+      ] {
+        app.apply(Action::Sort {
+          context: SortContext::SidebarPlaylists,
+          field,
+        });
+        let label = if field == SortField::Default {
+          app.strings().popups.sort_spotify
+        } else {
+          app.strings().popups.sort_field(field)
+        };
+        let title = format!("{} · {}", app.strings().sidebar.playlists, label);
+        // Wide characters leave continuation cells in the TestBackend buffer.
+        let compact = |text: &str| {
+          text
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>()
+        };
+        assert!(
+          compact(&rendered(&app, Rect::new(0, 0, 140, 30))).contains(&compact(&title)),
+          "{language:?} {field:?}"
+        );
+      }
+    }
   }
 
   fn folder(name: &str) -> PlaylistInfo {
@@ -461,6 +514,41 @@ mod tests {
     let app = App::default_connected();
     let content = rendered(&app, Rect::new(0, 0, 60, 40));
     assert!(!content.contains("log in to Spotify"), "{content}");
+  }
+
+  #[test]
+  fn pinned_playlists_render_with_a_marker_below_the_community_pin() {
+    use crate::core::app::PlaylistFolderItem;
+    use crate::core::test_helpers::playlist_info;
+    let mut app = App::default();
+    *app.all_playlists_mut() = ["Ordinary", "Pinned"]
+      .iter()
+      .enumerate()
+      .map(|(i, name)| playlist_info(&format!("p{i}"), name, "me", false))
+      .collect();
+    *app.playlist_folder_items_mut() = (0..2)
+      .map(|index| PlaylistFolderItem::Playlist {
+        index,
+        current_id: 0,
+      })
+      .collect();
+    app.runtime_state.pinned_playlists = vec!["spotify:playlist:p1".into()];
+    let compact = |text: String| {
+      text
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect::<String>()
+    };
+    let content = compact(rendered(&app, Rect::new(0, 0, 60, 40)));
+    assert!(content.contains("📌Pinned"), "{content}");
+    assert!(content.find("spotatuicommunity").unwrap() < content.find("📌Pinned").unwrap());
+    assert!(content.find("📌Pinned").unwrap() < content.find("Ordinary").unwrap());
+    app.current_playlist_folder_id = 1;
+    *app.playlist_folder_items_mut() = vec![PlaylistFolderItem::Playlist {
+      index: 1,
+      current_id: 1,
+    }];
+    assert!(compact(rendered(&app, Rect::new(0, 0, 60, 40))).contains("📌Pinned"));
   }
 
   #[test]

@@ -88,7 +88,7 @@ pub const TOOLS: &[ToolSpec] = &[
   ToolSpec {
     name: "get_now_playing",
     title: "Now playing",
-    description: "The currently playing or paused track, whether playback is active, and how many tracks are waiting in the queue.",
+    description: "The currently playing or paused track with its URI, whether playback is active, and how many tracks are waiting in the queue.",
     read_only: true,
     needs_network: false,
     dj: true,
@@ -175,7 +175,7 @@ pub const TOOLS: &[ToolSpec] = &[
   ToolSpec {
     name: "play_now",
     title: "Play now",
-    description: "Start playing a track immediately, interrupting whatever is playing. Use queue_tracks instead unless the user asked for something right now. The track has to exist: give a URI from search_tracks rather than one you assembled yourself.",
+    description: "Ask the player to start a track immediately, interrupting whatever is playing. Use queue_tracks instead unless the user asked for something right now. The track has to exist: give a URI from search_tracks rather than one you assembled yourself. A problem known up front (a source that is missing or not set up, a malformed URI, no login) comes back as an error and nothing is sent. Otherwise the reply only means the request was sent; a download or device failure can still stop it, so call get_now_playing to confirm.",
     read_only: false,
     needs_network: true,
     dj: true,
@@ -574,6 +574,10 @@ impl ToolOutcome {
     result
   }
 
+  pub fn dropped() -> Self {
+    Self::error_localized(|strings| strings.status.tools.dropped)
+  }
+
   pub fn data_localized<T: Into<String>>(
     render: impl Fn(&crate::core::i18n::Strings) -> T,
     structured: Value,
@@ -923,7 +927,11 @@ pub fn queue_needs_spotify(items: &[QueueItem]) -> bool {
 /// Returns `None` for calls that run the network handlers: on the Spotify lane
 /// when they need the client, else in the executor with none — see
 /// `crate::infra::network::dj`.
-pub async fn execute_app_only(app: &Arc<Mutex<App>>, call: &DjToolCall) -> Option<ToolOutcome> {
+pub async fn execute_app_only(
+  app: &Arc<Mutex<App>>,
+  call: &DjToolCall,
+  turn: Option<super::DjTurn>,
+) -> Option<ToolOutcome> {
   match call {
     DjToolCall::GetListeningHistory { period } => Some(history_outcome(app, *period).await),
     DjToolCall::GetNowPlaying => Some(now_playing_outcome(app).await),
@@ -931,6 +939,9 @@ pub async fn execute_app_only(app: &Arc<Mutex<App>>, call: &DjToolCall) -> Optio
     DjToolCall::GetLyrics => Some(lyrics_outcome(app).await),
     DjToolCall::SkipTrack => {
       let mut app = app.lock().await;
+      if turn.is_some_and(|turn| !turn.is_current(&app)) {
+        return Some(ToolOutcome::dropped());
+      }
       // Through the shared vocabulary, so `App::next_track`'s ownership routing
       // (queue slot, decoded sources, suspend-to-queue, native shuffle
       // bookkeeping) applies; the old raw `IoEvent::NextTrack` dispatch missed
@@ -942,6 +953,9 @@ pub async fn execute_app_only(app: &Arc<Mutex<App>>, call: &DjToolCall) -> Optio
     }
     DjToolCall::SetDjVibe { vibe } => {
       let mut app = app.lock().await;
+      if turn.is_some_and(|turn| !turn.is_current(&app)) {
+        return Some(ToolOutcome::dropped());
+      }
       // The apply arm bumps the DJ generation exactly once (the adopt-one-bump
       // rule in the turn loop depends on that count).
       app.apply(Action::SetDjVibe(vibe.clone()));
@@ -1241,6 +1255,7 @@ async fn now_playing_outcome(app: &Arc<Mutex<App>>) -> ToolOutcome {
         },
         json!({
           "track": label,
+          "uri": snapshot.item_uri,
           "is_playing": snapshot.is_playing,
           "is_live": snapshot.is_live,
           "queue_depth": queue_depth,
@@ -1254,6 +1269,7 @@ async fn now_playing_outcome(app: &Arc<Mutex<App>>) -> ToolOutcome {
       |strings| strings.status.tools.nothing_playing(queue_depth),
       json!({
         "track": Value::Null,
+        "uri": Value::Null,
         "is_playing": false,
         "is_live": false,
         "queue_depth": queue_depth,
@@ -1668,7 +1684,7 @@ mod tests {
       app.user_config.behavior.enable_lyrics = true;
       app.set_lyrics(LyricsStatus::NotFound, None, false);
     }
-    let outcome = execute_app_only(&app, &DjToolCall::GetLyrics)
+    let outcome = execute_app_only(&app, &DjToolCall::GetLyrics, None)
       .await
       .expect("get_lyrics is answered without the network");
     assert!(outcome.is_error);
@@ -1678,7 +1694,7 @@ mod tests {
       Some(vec![(0, "hello".to_string())]),
       false,
     );
-    let outcome = execute_app_only(&app, &DjToolCall::GetLyrics)
+    let outcome = execute_app_only(&app, &DjToolCall::GetLyrics, None)
       .await
       .unwrap();
     assert!(!outcome.is_error);
@@ -1690,7 +1706,7 @@ mod tests {
     // A default `App` has no playback context and no native track, so the
     // snapshot is `None` — the branch that used to drop `is_live`.
     let app = Arc::new(Mutex::new(App::default()));
-    let outcome = execute_app_only(&app, &DjToolCall::GetNowPlaying)
+    let outcome = execute_app_only(&app, &DjToolCall::GetNowPlaying, None)
       .await
       .expect("get_now_playing is answered without the network");
     let data = outcome
@@ -1698,9 +1714,35 @@ mod tests {
       .expect("now_playing returns structured data");
 
     assert_eq!(data.get("track"), Some(&Value::Null));
+    assert_eq!(data.get("uri"), Some(&Value::Null));
     assert_eq!(data.get("is_playing"), Some(&json!(false)));
     // The key the playing branch always sends. Absent, a client cannot tell "not
     // a live stream" from "this build never says".
+    assert_eq!(data.get("is_live"), Some(&json!(false)));
+    assert_eq!(data.get("queue_depth"), Some(&json!(0)));
+  }
+
+  #[tokio::test]
+  async fn now_playing_returns_the_uri_of_the_playing_track() {
+    let mut app = App::default();
+    app.current_playback_context = Some(crate::core::test_helpers::playing_with_art(
+      "4uLU6hMCjMI75M1A2tKUQC",
+      "https://example.com/a.jpg",
+    ));
+    let app = Arc::new(Mutex::new(app));
+    let outcome = execute_app_only(&app, &DjToolCall::GetNowPlaying, None)
+      .await
+      .expect("get_now_playing is answered without the network");
+    let data = outcome
+      .structured
+      .expect("now_playing returns structured data");
+
+    assert_eq!(data.get("track"), Some(&json!("Cover Song — Test Artist")));
+    assert_eq!(
+      data.get("uri"),
+      Some(&json!("spotify:track:4uLU6hMCjMI75M1A2tKUQC"))
+    );
+    assert_eq!(data.get("is_playing"), Some(&json!(true)));
     assert_eq!(data.get("is_live"), Some(&json!(false)));
     assert_eq!(data.get("queue_depth"), Some(&json!(0)));
   }
@@ -1713,6 +1755,7 @@ mod tests {
       &DjToolCall::SetDjVibe {
         vibe: Some("mellow instrumental".into()),
       },
+      None,
     )
     .await
     .expect("set_dj_vibe is answered without the network");
@@ -1750,7 +1793,7 @@ mod tests {
   async fn clearing_a_vibe_stays_terse() {
     // Nothing was set, so there is no expectation to correct.
     let app = Arc::new(Mutex::new(App::default()));
-    let outcome = execute_app_only(&app, &DjToolCall::SetDjVibe { vibe: None })
+    let outcome = execute_app_only(&app, &DjToolCall::SetDjVibe { vibe: None }, None)
       .await
       .unwrap();
     assert_eq!(outcome.text, "DJ vibe cleared");
@@ -1965,7 +2008,7 @@ mod tests {
   async fn a_write_without_a_spotify_session_is_refused() {
     let (app, rx) = app_with_channel(false);
     let call = parse_call("create_playlist", &json!({"name": "Road Trip"})).unwrap();
-    let outcome = execute_app_only(&app, &call).await.unwrap();
+    let outcome = execute_app_only(&app, &call, None).await.unwrap();
     assert!(outcome.is_error);
     assert!(rx.try_recv().is_err(), "nothing reaches the pump");
   }
@@ -1981,7 +2024,7 @@ mod tests {
     )
     .unwrap();
     assert!(call.needs_network());
-    assert!(execute_app_only(&app, &call).await.is_none());
+    assert!(execute_app_only(&app, &call, None).await.is_none());
     assert!(rx.try_recv().is_err(), "nothing reaches the pump");
   }
 
@@ -1999,9 +2042,13 @@ mod tests {
     }
     let args =
       json!({"playlist": "spotify:playlist:00000000000000000000p2", "uri": TRACK, "position": 0});
-    let outcome = execute_app_only(&app, &parse_call("remove_from_playlist", &args).unwrap())
-      .await
-      .unwrap();
+    let outcome = execute_app_only(
+      &app,
+      &parse_call("remove_from_playlist", &args).unwrap(),
+      None,
+    )
+    .await
+    .unwrap();
     assert!(outcome.is_error);
     assert!(rx.try_recv().is_err(), "nothing reaches the pump");
 
@@ -2016,7 +2063,7 @@ mod tests {
     use crate::infra::network::IoEvent;
     let (app, rx) = app_with_channel(true);
     let call = parse_call("follow_artist", &json!({"artist": ARTIST, "follow": false})).unwrap();
-    execute_app_only(&app, &call).await.unwrap();
+    execute_app_only(&app, &call, None).await.unwrap();
     assert!(matches!(rx.try_recv(), Ok(IoEvent::UserUnfollowArtists(_))));
   }
 
@@ -2032,7 +2079,7 @@ mod tests {
         playlist_info("00000000000000000000p2", "Theirs", "other", false),
       ]);
     }
-    let outcome = execute_app_only(&app, &DjToolCall::ListPlaylists)
+    let outcome = execute_app_only(&app, &DjToolCall::ListPlaylists, None)
       .await
       .unwrap();
     let playlists = outcome.structured.unwrap()["playlists"].clone();

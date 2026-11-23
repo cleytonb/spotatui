@@ -244,7 +244,10 @@ pub struct InfraStatusStrings {
   pub dj_library_failed: &'static str,
   pub dj_topped_up: &'static str,
   pub dj_nothing_queued: &'static str,
+  pub dj_refill_empty: &'static str,
+  pub dj_refill_reason: &'static str,
   pub dj_error: &'static str,
+  pub dj_auto_queue_stopped: &'static str,
   pub dj_steps_exhausted: &'static str,
   pub history_plays: &'static str,
   pub history_track_hits: &'static str,
@@ -295,6 +298,7 @@ pub struct InfraStatusStrings {
   pub network_error: &'static str,
   pub network_rate_error: &'static str,
   pub monthly_recap_ready: &'static str,
+  pub year_recap_ready: &'static str,
   pub queue_local_source: &'static str,
   pub unnamed_folder: &'static str,
   pub local_root_folder: &'static str,
@@ -790,6 +794,18 @@ impl InfraStatusStrings {
   pub fn dj_error(&self, backend: &str, error: &str) -> String {
     super::format_template(self.dj_error, &[("backend", backend), ("error", error)])
   }
+  pub fn dj_auto_queue_stopped(&self, count: usize, reason: &str) -> String {
+    let reason = reason.trim_end();
+    let reason = if reason.ends_with(['.', '!', '?', '。', '！', '？']) {
+      reason.to_string()
+    } else {
+      super::format_template(self.dj_refill_reason, &[("reason", reason)])
+    };
+    super::format_template(
+      self.dj_auto_queue_stopped,
+      &[("count", &count.to_string()), ("reason", &reason)],
+    )
+  }
   pub fn dj_steps_exhausted(&self, count: usize) -> String {
     super::format_template(self.dj_steps_exhausted, &[("count", &count.to_string())])
   }
@@ -850,6 +866,16 @@ impl InfraStatusStrings {
     super::format_template(
       self.monthly_recap_ready,
       &[("path", path), ("count", &count.to_string())],
+    )
+  }
+  pub fn year_recap_ready(&self, year: i32, path: &str, count: usize) -> String {
+    super::format_template(
+      self.year_recap_ready,
+      &[
+        ("year", &year.to_string()),
+        ("path", path),
+        ("count", &count.to_string()),
+      ],
     )
   }
 }
@@ -940,7 +966,7 @@ pub const EN: InfraStatusStrings = InfraStatusStrings {
   youtube_already_added: "\"{name}\" is already in {playlist}",
   youtube_decode_failed: "Cannot play YouTube audio: {error} (installing ffmpeg fixes most container issues)",
   qobuz_login_expired: "Qobuz: login expired, press `d` and pick Qobuz to log in again",
-  qobuz_login_busy: "Qobuz login already in progress...",
+  qobuz_login_busy: "Qobuz login already in progress…",
   qobuz_browser_login: "Qobuz: open the browser window to log in",
   qobuz_logged_in: "Qobuz: logged in",
   qobuz_no_tracks: "No Qobuz tracks to play",
@@ -990,7 +1016,7 @@ pub const EN: InfraStatusStrings = InfraStatusStrings {
   spotify_rate_wait: "Spotify rate limit: waiting {seconds}s",
   spotify_pair: "Log in to Spotify: open {url} and confirm the code {code}",
   recap_created: "Listening recap generated at {path} ({count} listens)",
-  history_failed: "failed to load listening history: {error}",
+  history_failed: "Failed to load listening history: {error}",
   recap_failed: "Failed to generate recap: {error}",
   party_start_failed: "Failed to start party: {error}",
   party_join_failed: "Failed to join party: {error}",
@@ -1109,9 +1135,12 @@ pub const EN: InfraStatusStrings = InfraStatusStrings {
   dj_owned: "{count} already yours",
   dj_duplicate: "{count} already queued",
   dj_status: "DJ: {summary}",
-  dj_library_failed: "DJ: could not read your playlists ({error}); recommending unfiltered",
+  dj_library_failed: "DJ: could not read your playlists ({error})",
   dj_topped_up: "DJ: topped up the queue",
+  dj_auto_queue_stopped: "DJ auto-queue stopped after {count} failed refills. {reason} Re-enable auto-queue to try again.",
   dj_nothing_queued: "DJ: nothing was queued that time. Ask again, or try a different direction.",
+  dj_refill_empty: "No tracks were queued",
+  dj_refill_reason: "{reason}.",
   dj_error: "DJ error ({backend}): {error}",
   dj_steps_exhausted: "Stopped after {count} steps. Ask again if that is not where you wanted to end up.",
   history_plays: "{count} plays · {duration}",
@@ -1163,6 +1192,7 @@ pub const EN: InfraStatusStrings = InfraStatusStrings {
   network_error: "{error}",
   network_rate_error: "{error}",
   monthly_recap_ready: "Monthly listening recap ready at {path} ({count} listens)",
+  year_recap_ready: "Your {year} listening recap is ready at {path} ({count} listens)",
   queue_local_source: "Local",
   unnamed_folder: "Unnamed Folder",
   local_root_folder: "(root)",
@@ -1384,9 +1414,12 @@ pub const ZH_HANS: InfraStatusStrings = InfraStatusStrings {
   dj_owned: "已拥有 {count} 首",
   dj_duplicate: "已在队列中 {count} 首",
   dj_status: "DJ：{summary}",
-  dj_library_failed: "DJ：无法读取你的播放列表（{error}），将不加过滤地推荐",
+  dj_library_failed: "DJ：无法读取你的播放列表（{error}）",
   dj_topped_up: "DJ：已补充队列",
+  dj_auto_queue_stopped: "DJ 自动补充队列连续 {count} 次失败，已关闭。{reason}请重新开启自动补充队列以重试。",
   dj_nothing_queued: "DJ：这次未加入任何曲目。请再试一次，或换个方向。",
+  dj_refill_empty: "这次未加入任何曲目",
+  dj_refill_reason: "{reason}。",
   dj_error: "DJ 错误（{backend}）：{error}",
   dj_steps_exhausted: "已在 {count} 步后停止。如果结果不符合预期，请再次提问。",
   history_plays: "{count} 次播放 · {duration}",
@@ -1438,6 +1471,7 @@ pub const ZH_HANS: InfraStatusStrings = InfraStatusStrings {
   network_error: "Spotify 请求失败：{error}",
   network_rate_error: "Spotify 请求受限：{error}",
   monthly_recap_ready: "月度收听回顾已生成于 {path}（{count} 次收听）",
+  year_recap_ready: "{year} 年度收听回顾已生成于 {path}（{count} 次收听）",
   queue_local_source: "本地",
   unnamed_folder: "未命名文件夹",
   local_root_folder: "（根目录）",
@@ -1702,9 +1736,12 @@ pub const ZH_HANT: InfraStatusStrings = InfraStatusStrings {
   dj_owned: "已擁有 {count} 首",
   dj_duplicate: "已在佇列中 {count} 首",
   dj_status: "DJ：{summary}",
-  dj_library_failed: "DJ：無法讀取你的播放清單（{error}），將不加篩選地推薦",
+  dj_library_failed: "DJ：無法讀取你的播放清單（{error}）",
   dj_topped_up: "DJ：已補充佇列",
+  dj_auto_queue_stopped: "DJ 自動補充佇列連續 {count} 次失敗，已關閉。{reason}請重新開啟自動補充佇列以重試。",
   dj_nothing_queued: "DJ：這次未加入任何曲目。請再試一次，或換個方向。",
+  dj_refill_empty: "這次未加入任何曲目",
+  dj_refill_reason: "{reason}。",
   dj_error: "DJ 錯誤（{backend}）：{error}",
   dj_steps_exhausted: "已在 {count} 步後停止。如果結果不符合預期，請再次提問。",
   history_plays: "{count} 次播放 · {duration}",
@@ -1756,6 +1793,7 @@ pub const ZH_HANT: InfraStatusStrings = InfraStatusStrings {
   network_error: "Spotify 請求失敗：{error}",
   network_rate_error: "Spotify 請求受限：{error}",
   monthly_recap_ready: "每月聆聽回顧已產生於 {path}（{count} 次聆聽）",
+  year_recap_ready: "{year} 年度聆聽回顧已產生於 {path}（{count} 次聆聽）",
   queue_local_source: "本機",
   unnamed_folder: "未命名資料夾",
   local_root_folder: "（根目錄）",

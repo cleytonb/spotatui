@@ -1,5 +1,7 @@
 use clap::{builder::ArgPredicate, Arg, ArgAction, ArgGroup, Command};
 
+use crate::infra::network::search::SPOTIFY_SEARCH_LIMIT;
+
 fn device_arg() -> Arg {
   Arg::new("device")
     .short('d')
@@ -39,16 +41,26 @@ fn parse_spotify_uri(uri: &str) -> Result<String, String> {
     "spotify:playlist:",
     "spotify:show:",
   ];
-  if PLAYABLE.iter().any(|kind| uri.starts_with(kind)) {
-    return Ok(uri.to_string());
-  }
   let expected = "expected a spotify:track:, spotify:album:, spotify:artist:, \
 spotify:playlist: or spotify:show: URI";
+  if let Some(kind) = PLAYABLE.iter().find(|kind| uri.starts_with(**kind)) {
+    if uri[kind.len()..].trim().is_empty() {
+      return Err(format!("{expected}; {kind} has no id"));
+    }
+    return Ok(uri.to_string());
+  }
   match uri.split_once(':') {
     Some((scheme, _)) if OTHER_SOURCES.contains(&scheme) => Err(format!(
       "{scheme}: URIs play only in the running spotatui; {expected}"
     )),
     _ => Err(expected.to_string()),
+  }
+}
+
+fn parse_volume(value: &str) -> Result<String, String> {
+  match value.parse::<u8>() {
+    Ok(0..=100) => Ok(value.to_string()),
+    _ => Err("volume must be between 0 and 100".to_string()),
   }
 }
 
@@ -84,6 +96,36 @@ fn parse_playlist_uri(input: &str) -> Result<String, String> {
   Ok(format!("spotify:playlist:{id}"))
 }
 
+/// Refuses a `--seek` value that is not whole seconds with an optional `+` or
+/// `-`, so it fails before boot. The string is returned unchanged because the
+/// sign decides between a relative and an absolute seek.
+fn parse_seek_seconds(value: &str) -> Result<String, String> {
+  match value.parse::<i32>() {
+    Ok(_) => Ok(value.to_string()),
+    Err(_) => Err("expected whole seconds, for example +10, -10 or 10".to_string()),
+  }
+}
+
+/// `list --limit` before boot: a whole number of 1 or more. The ceiling of 50
+/// for plain `list` stays in `update_query_limits`, because `--playlist-tracks`
+/// shares this argument and takes any number of tracks.
+fn parse_list_limit(value: &str) -> Result<String, String> {
+  match value.parse::<u32>() {
+    Ok(1..) => Ok(value.to_string()),
+    _ => Err("limit must be a whole number, 1 or more".to_string()),
+  }
+}
+
+/// `search --limit` before boot: a search returns at most one page.
+fn parse_search_limit(value: &str) -> Result<String, String> {
+  match value.parse::<u32>() {
+    Ok(num) if (1..=SPOTIFY_SEARCH_LIMIT).contains(&num) => Ok(value.to_string()),
+    _ => Err(format!(
+      "limit must be between 1 and {SPOTIFY_SEARCH_LIMIT}"
+    )),
+  }
+}
+
 /// Refuses a `--queue` or `--random` that the kind of `--uri` cannot honor.
 ///
 /// Clap sees the kind of a `--name` search through its category flags, but the
@@ -112,9 +154,12 @@ spotatui will display the updated playback. The output format is configurable wi
 
 Here's a list:
 
-* `--next` and `--previous` cannot be used with other options
-* `--status`, `--toggle`, `--transfer`, `--volume`, `--like`, `--repeat` and `--shuffle` \
-can be used together
+* `--next` and `--previous` cannot be used together, and work only with `--seek`, \
+`--device` and `--format`
+* `--status`, `--toggle`, `--transfer`, `--volume`, `--like`, `--dislike`, `--repeat` and \
+`--shuffle` can be used together
+* `--like` and `--dislike` cannot be used together
+* `--seek` is accepted with every option, but `--share-track` and `--share-album` ignore it
 * `--share-track` and `--share-album` cannot be used with other options",
     )
     .visible_alias("pb")
@@ -209,6 +254,7 @@ two songs back, you can use `spotatui pb -ppp` and so on.",
       Arg::new("seek")
         .long("seek")
         .value_name("±SECONDS")
+        .value_parser(parse_seek_seconds)
         .allow_hyphen_values(true)
         .help("Jumps SECONDS forwards (+) or backwards (-)")
         .long_help(
@@ -221,6 +267,7 @@ seconds backwards and `spotatui pb --seek 10` to the tenth second of the track."
         .short('v')
         .long("volume")
         .value_name("VOLUME")
+        .value_parser(parse_volume)
         .help("Sets the volume of a device to VOLUME (0 - 100)"),
     )
     .group(
@@ -403,6 +450,7 @@ way you want. The format option will be applied to every item found.",
     .arg(
       Arg::new("limit")
         .long("limit")
+        .value_parser(parse_list_limit)
         .help("Specifies the maximum number of results (1 - 50, any number of playlist tracks)"),
     )
     .group(
@@ -477,6 +525,7 @@ specify it.",
     .arg(
       Arg::new("limit")
         .long("limit")
+        .value_parser(parse_search_limit)
         .help("Specifies the maximum number of results (1 - 10)"),
     )
     .group(
@@ -490,6 +539,134 @@ specify it.",
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn playback_volume_over_100_is_refused_before_any_action_runs() {
+    for volume in ["101", "150", "256", "99999999999"] {
+      let error = playback_subcommand()
+        .try_get_matches_from(["playback", "-t", "-v", volume])
+        .unwrap_err();
+      assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
+      assert!(
+        error
+          .to_string()
+          .contains("volume must be between 0 and 100"),
+        "{error}"
+      );
+    }
+  }
+
+  #[test]
+  fn playback_volume_refuses_text() {
+    for volume in ["abc", "1.5", ""] {
+      let error = playback_subcommand()
+        .try_get_matches_from(["playback", "--volume", volume])
+        .unwrap_err();
+      assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
+      assert!(
+        error
+          .to_string()
+          .contains("volume must be between 0 and 100"),
+        "{error}"
+      );
+    }
+  }
+
+  #[test]
+  fn list_limit_refuses_what_is_not_a_positive_whole_number_before_boot() {
+    for limit in ["abc", "0", "1.5", ""] {
+      let error = list_subcommand()
+        .try_get_matches_from(["list", "--playlists", "--limit", limit])
+        .unwrap_err();
+      assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
+      assert!(
+        error
+          .to_string()
+          .contains("limit must be a whole number, 1 or more"),
+        "{error}"
+      );
+    }
+  }
+
+  #[test]
+  fn list_limit_leaves_the_ceiling_to_the_listing() {
+    for limit in ["1", "50", "51", "500"] {
+      let matches = list_subcommand()
+        .try_get_matches_from(["list", "--playlists", "--limit", limit])
+        .unwrap();
+      assert_eq!(matches.get_one::<String>("limit").unwrap(), limit);
+    }
+  }
+
+  #[test]
+  fn search_limit_refuses_a_value_outside_1_to_10_before_boot() {
+    for limit in ["abc", "0", "11", ""] {
+      let error = search_subcommand()
+        .try_get_matches_from(["search", "--tracks", "--limit", limit, "foo"])
+        .unwrap_err();
+      assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
+      assert!(
+        error.to_string().contains("limit must be between 1 and 10"),
+        "{error}"
+      );
+    }
+    for limit in ["1", "10"] {
+      let matches = search_subcommand()
+        .try_get_matches_from(["search", "--tracks", "--limit", limit, "foo"])
+        .unwrap();
+      assert_eq!(matches.get_one::<String>("limit").unwrap(), limit);
+    }
+  }
+
+  #[test]
+  fn playback_volume_accepts_0_and_100() {
+    for volume in ["0", "40", "100"] {
+      let matches = playback_subcommand()
+        .try_get_matches_from(["playback", "-t", "-v", volume])
+        .unwrap();
+      assert_eq!(matches.get_one::<String>("volume").unwrap(), volume);
+      assert!(matches.get_flag("toggle"));
+    }
+  }
+
+  #[test]
+  fn playback_seek_accepts_signed_and_absolute_seconds() {
+    for seek in ["+10", "-10", "10"] {
+      let matches = playback_subcommand()
+        .try_get_matches_from(["playback", "--seek", seek])
+        .unwrap();
+      assert_eq!(matches.get_one::<String>("seek").unwrap(), seek);
+    }
+  }
+
+  #[test]
+  fn playback_seek_refuses_a_value_that_is_not_whole_seconds() {
+    for seek in ["ten", "1.5", "+", "", "99999999999"] {
+      let error = playback_subcommand()
+        .try_get_matches_from(["playback", "--seek", seek])
+        .unwrap_err();
+      assert!(
+        error.to_string().contains("expected whole seconds"),
+        "{seek}: {error}"
+      );
+    }
+  }
+
+  #[test]
+  fn playback_long_help_names_dislike_and_seek() {
+    let help = playback_subcommand()
+      .get_long_about()
+      .expect("playback must have a long help")
+      .to_string();
+    for line in [
+      "work only with `--seek`, `--device` and `--format`",
+      "`--like`, `--dislike`, `--repeat` and `--shuffle` can be used together",
+      "`--like` and `--dislike` cannot be used together",
+      "`--seek` is accepted with every option, but `--share-track` and `--share-album` ignore it",
+    ] {
+      assert!(help.contains(line), "missing {line:?} in:\n{help}");
+    }
+  }
 
   #[test]
   fn play_uri_accepts_the_spotify_kinds_it_can_start() {
@@ -530,6 +707,24 @@ mod tests {
     ] {
       let error = parse_spotify_uri(uri).unwrap_err();
       assert!(error.starts_with("expected a spotify:track:"), "{error}");
+    }
+  }
+
+  #[test]
+  fn play_uri_refuses_a_spotify_uri_without_an_id() {
+    for kind in ["track", "album", "artist", "playlist", "show"] {
+      for uri in [format!("spotify:{kind}:"), format!("spotify:{kind}: ")] {
+        let error = parse_spotify_uri(&uri).unwrap_err();
+        assert!(
+          error.starts_with("expected a spotify:track:"),
+          "{uri}: {error}"
+        );
+        assert!(
+          error.ends_with(&format!("spotify:{kind}: has no id")),
+          "{uri}: {error}"
+        );
+      }
+      assert!(parse_spotify_uri(&format!("spotify:{kind}:1")).is_ok());
     }
   }
 
