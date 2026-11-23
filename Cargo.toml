@@ -184,7 +184,16 @@ objc2 = { version = "0.6", optional = true }
 block2 = { version = "0.6", optional = true }
 
 [features]
-default = ["telemetry", "streaming", "audio-viz-cpal", "macos-media", "discord-rpc", "mpris", "self-update", "windows-media", "scripting", "tui"]
+# Fork choice: a plain `cargo build --release` matches the official macOS
+# release (.github/workflows/cd.yml), DJ and MCP included. `portaudio-backend`
+# needs the portaudio library (`brew install portaudio`); mpris and
+# windows-media compile to nothing outside their platforms.
+default = [
+  "telemetry", "tui", "streaming", "discord-rpc", "cover-art", "self-update", "scripting",
+  "mcp-server", "ai-dj",
+  "audio-viz-cpal", "portaudio-backend", "macos-media", "mpris", "windows-media",
+  "local-files", "subsonic", "internet-radio", "youtube", "qobuz", "soloist", "apple-music",
+]
 telemetry = []
 # The terminal frontend: gates `mod tui` and owns the terminal-only crates.
 # The headless CI leg omits it, so any `crate::tui` import from core/infra/cli
